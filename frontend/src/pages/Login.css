@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.login-wrapper {
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  font-family: 'Inter', sans-serif;
+  padding: 20px;
+}
+
+.login-card {
+  background: #ffffff;
+  width: 100%;
+  max-width: 420px;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.login-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.login-header p {
+  font-size: 14px;
+  color: #666;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #444;
+  margin-bottom: 8px;
+}
+
+.form-control {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: #f9f9f9;
+  transition: all 0.3s ease;
+  outline: none;
+}
+
+.form-control:focus {
+  border-color: #764ba2;
+  background-color: #fff;
+  box-shadow: 0 0 0 4px rgba(118, 75, 162, 0.1);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 14px;
+  background: #764ba2;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+  margin-top: 10px;
+}
+
+.login-btn:hover {
+  background: #5d3b82;
+  transform: translateY(-1px);
+}
+
+.login-footer {
+    text-align: center;
+    margin-top: 25px;
+    font-size: 13px;
+    color: #888;
+}
+
+/* --- ADDED THIS SECTION TO FIX THE BUTTON --- */
+.link-btn {
+    background: none;
+    border: none;
+    color: #764ba2;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: inherit;
+    font-family: inherit;
+    padding: 0;
+}
+
+.link-btn:hover {
+    text-decoration: underline;
+    color: #5d3b82;
+}

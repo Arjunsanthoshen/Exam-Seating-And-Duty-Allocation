@@ -1,0 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+.App {
+  /* 1. Ensure the app always takes at least the full screen height */
+  min-height: 100vh;
+  width: 100%;
+  
+  /* 2. The Premium Gradient Background */
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  
+  /* 3. Global Font Settings */
+  font-family: 'Inter', sans-serif;
+  
+  /* Reset default margin/padding for the whole app */
+  box-sizing: border-box;
+}
+
+/* Ensure all elements calculate width correctly */
+*, *::before, *::after {
+  box-sizing: inherit;
+}
