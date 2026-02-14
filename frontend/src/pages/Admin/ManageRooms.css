@@ -1,0 +1,192 @@
+.manage-rooms-container {
+    padding: 20px;
+    background-color: #f0f4f8;
+    border-radius: 12px;
+    font-family: sans-serif;
+    color: #333;
+}
+
+.form-card {
+    background: white;
+    padding: 25px;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+
+.input-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.benches-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.input-group { display: flex; flex-direction: column; }
+.input-group label { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+
+input, select {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+}
+
+.save-btn {
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    padding: 10px 25px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.table-container {
+    margin-top: 30px;
+    max-height: 450px; /* Limits to roughly 10 rows */
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+
+thead {
+    position: sticky;
+    top: 0;
+    background: #4a90e2;
+    color: white;
+}
+
+th, td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #eee;
+}
+
+.edit-icon { color: #4a90e2; cursor: pointer; font-size: 18px; }
+/* Container for the toggle buttons */
+.toggle-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Base style for the pill buttons */
+.toggle-btn {
+    width: 60px; /* Adjust width as needed */
+    padding: 6px 0;
+    border-radius: 20px; /* Creates the pill shape */
+    border: 1px solid #ccc;
+    background-color: white;
+    color: #333;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    outline: none;
+}
+
+/* Active/Selected state */
+.toggle-btn.active {
+    background-color: #7096d1; /* The blue color from your image */
+    color: white;
+    border-color: #7096d1;
+}
+
+/* Hover effect for unselected buttons */
+.toggle-btn:hover:not(.active) {
+    background-color: #f0f0f0;
+}
+/* Existing styles remain, but we update grid layouts */
+.manage-rooms-container {
+    padding: 10px; /* Reduced padding for mobile */
+    background-color: #f0f4f8;
+    border-radius: 12px;
+    font-family: sans-serif;
+    color: #333;
+}
+
+.form-card {
+    background: white;
+    padding: 15px; /* Reduced padding for mobile */
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+
+/* Desktop First Grids */
+.input-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.benches-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr); /* Balanced for desktop */
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+/* TABLE RESPONSIVENESS */
+.table-container {
+    margin-top: 20px;
+    max-height: 450px;
+    overflow-x: auto; /* Horizontal scroll for small screens */
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    -webkit-overflow-scrolling: touch;
+}
+
+table {
+    width: 100%;
+    min-width: 800px; /* Forces scroll instead of squishing columns */
+    border-collapse: collapse;
+    background: white;
+}
+
+/* MOBILE RESPONSIVE QUERIES */
+@media screen and (max-width: 768px) {
+    .input-grid {
+        grid-template-columns: 1fr 1fr; /* 2 columns on tablets/large phones */
+    }
+
+    .benches-grid {
+        grid-template-columns: 1fr 1fr; /* 2 columns for bench selectors */
+    }
+    
+    .save-btn {
+        width: 100%; /* Full width button on mobile */
+        padding: 15px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .input-grid {
+        grid-template-columns: 1fr; /* 1 column on small phones */
+    }
+
+    .toggle-group {
+        justify-content: flex-start;
+    }
+}
+
+/* Style for the Edit Icon Button */
+.edit-icon { 
+    color: #4a90e2; 
+    cursor: pointer; 
+    font-size: 20px;
+    padding: 5px;
+}
+
+/* Rest of your toggle-btn and general styles... */
