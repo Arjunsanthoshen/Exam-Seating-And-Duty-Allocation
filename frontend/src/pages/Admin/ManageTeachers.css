@@ -1,0 +1,95 @@
+.manage-container {
+  padding: 40px;
+  background: linear-gradient(to right, #6f94c9, #8db2e5);
+  min-height: 100vh;
+}
+
+.page-title {
+  color: white;
+  margin-bottom: 25px;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 30px;
+  box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+}
+
+.card-header {
+  background: linear-gradient(to right, #5b87c4, #7ea4db);
+  color: white;
+  padding: 15px;
+  font-weight: bold;
+}
+
+.add-form {
+  padding: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.add-form input {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  width: 220px;
+}
+
+.btn-primary {
+  background: #4a74b1;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.search-box {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  width: 300px;
+  margin-bottom: 20px;
+}
+
+.table-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+
+.table-header {
+  background: linear-gradient(to right, #5b87c4, #7ea4db);
+  color: white;
+  padding: 15px;
+  font-weight: bold;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  background: #5b87c4;
+  color: white;
+  padding: 12px;
+}
+
+td {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.btn-delete {
+  background: #d9534f;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}

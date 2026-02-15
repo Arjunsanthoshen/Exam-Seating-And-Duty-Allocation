@@ -132,6 +132,113 @@ app.delete('/api/rooms/:room_no', (req, res) => {
     });
 });
 
+
+// ----------------------------------------------------------------------------
+//                        MANAGE TEACHERS ROUTES
+// ----------------------------------------------------------------------------
+
+// GET: View all teachers
+app.get('/api/teachers', (req, res) => {
+    const query = `
+        SELECT username, name, availability, department, phone
+        FROM Teacher
+        ORDER BY name ASC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Fetch Teachers Error:", err);
+            return res.status(500).json({ error: "Database fetch failed" });
+        }
+        res.json(results);
+    });
+});
+
+
+// POST: Add a new teacher
+app.post('/api/teachers', (req, res) => {
+    const { username, password, name, availability, department, phone } = req.body;
+
+    db.beginTransaction(err => {
+        if (err) return res.status(500).json(err);
+
+        // Insert into Users table
+        const userQuery = `
+            INSERT INTO Users (username, role, password)
+            VALUES (?, 'Teacher', ?)
+        `;
+
+        db.query(userQuery, [username, password], (err) => {
+            if (err) {
+                return db.rollback(() =>
+                    res.status(500).json({ message: "Username already exists" })
+                );
+            }
+
+            // Insert into Teacher table
+            const teacherQuery = `
+                INSERT INTO Teacher (username, name, availability, department, phone)
+                VALUES (?, ?, ?, ?, ?)
+            `;
+
+            db.query(
+                teacherQuery,
+                [username, name, availability, department, phone],
+                (err) => {
+                    if (err) {
+                        return db.rollback(() => res.status(500).json(err));
+                    }
+
+                    db.commit(err => {
+                        if (err) {
+                            return db.rollback(() => res.status(500).json(err));
+                        }
+                        res.json({ message: "Teacher added successfully" });
+                    });
+                }
+            );
+        });
+    });
+});
+
+
+// DELETE: Remove teacher
+// (Delete from Users → Teacher auto deletes due to CASCADE)
+app.delete('/api/teachers/:username', (req, res) => {
+    const { username } = req.params;
+
+    const query = "DELETE FROM Users WHERE username = ?";
+
+    db.query(query, [username], (err) => {
+        if (err) {
+            console.error("Delete Teacher Error:", err);
+            return res.status(500).json(err);
+        }
+        res.json({ message: "Teacher deleted successfully" });
+    });
+});
+
+
+// PUT: Update availability only
+app.put('/api/teachers/availability', (req, res) => {
+    const { username, availability } = req.body;
+
+    const query = `
+        UPDATE Teacher
+        SET availability = ?
+        WHERE username = ?
+    `;
+
+    db.query(query, [availability, username], (err, result) => {
+        if (err) {
+            console.error("Update Availability Error:", err);
+            return res.status(500).json(err);
+        }
+        res.json({ message: "Availability updated successfully" });
+    });
+});
+
+
 // ----------------------------------------------------------------------------
 //                              LOGIN ROUTES
 // ----------------------------------------------------------------------------

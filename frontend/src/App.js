@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import ExamStatus from "./pages/Admin/ExamStatusBoard";
 import ManageRooms from "./pages/Admin/ManageRooms";
+import ManageTeachers from "./pages/Admin/ManageTeachers";
 import ManageStudents from "./pages/Admin/ManageStudents"; // <--- ADD THIS IMPORT
 import MyDutySchedule from "./pages/Teacher/MyDutySchedule";
 import ExamHall from "./pages/Student/ExamHall";
@@ -27,7 +28,7 @@ function App() {
         {/* REPLACED Placeholder WITH REAL COMPONENT */}
         <Route path="/ManageStudents" element={<ManageStudents />} />
         
-        <Route path="/ManageTeachers" element={<Placeholder title="Manage Teachers" />} />
+        <Route path="/ManageTeachers" element={<ManageTeachers />} />
         <Route path="/ManageRooms" element={<ManageRooms />} />
         <Route path="/ExamSchedule" element={<Placeholder title="Exam Schedule" />} />
         <Route path="/GenerateSeating" element={<Placeholder title="Generate Seating" />} />
