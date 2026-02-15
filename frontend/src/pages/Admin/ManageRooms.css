@@ -1,192 +1,209 @@
-.manage-rooms-container {
-    padding: 20px;
-    background-color: #f0f4f8;
-    border-radius: 12px;
-    font-family: sans-serif;
-    color: #333;
+/* 1. Main Layout */
+.dashboard-container {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    background: linear-gradient(135deg, #7ba6dc 0%, #5b87c4 100%);
+    overflow: hidden;
 }
 
-.form-card {
-    background: white;
-    padding: 25px;
+.main-content {
+    flex: 1;
+    padding: 40px;
+    overflow-y: auto;
+    display: flex; /* Changed to flex to allow centering */
+    flex-direction: column;
+    align-items: center; /* Centers the card horizontally */
+}
+
+/* 2. The Card - Spacious but Balanced */
+.manage-card {
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 45px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    
+    /* Center and Widen */
+    width: 95%; 
+    max-width: 1400px; /* High limit so it's wide, but won't look "stretched" */
+    margin-bottom: 40px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.card-title {
+    color: #3d5d8a;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 35px;
+    border-left: 6px solid #7ba6dc;
+    padding-left: 20px;
+}
+
+/* 3. Form Section - Clean Definition */
+.form-section {
+    background-color: #ffffff;
+    padding: 35px;
     border-radius: 15px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    border: 1px solid #d1d9e6; /* Clean, defined border */
+    margin-bottom: 40px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
 }
 
 .input-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, 1fr); 
+    gap: 35px;
+    margin-bottom: 30px;
+}
+
+.sub-title {
+    color: #5b87c4;
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 25px 0;
+    display: flex;
+    align-items: center;
     gap: 15px;
-    margin-bottom: 20px;
+}
+
+.sub-title::after {
+    content: "";
+    flex: 1;
+    height: 1.5px;
+    background: #e2e8f0;
 }
 
 .benches-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    margin-bottom: 20px;
+    grid-template-columns: repeat(5, 1fr); 
+    gap: 25px;
+    margin-bottom: 40px;
 }
 
-.input-group { display: flex; flex-direction: column; }
-.input-group label { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
-
-input, select {
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
+/* 4. Inputs & Removing Room No Arrows */
+.input-box label {
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
 }
 
-.save-btn {
-    background-color: #4a90e2;
-    color: white;
-    border: none;
-    padding: 10px 25px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: bold;
-}
-
-.table-container {
-    margin-top: 30px;
-    max-height: 450px; /* Limits to roughly 10 rows */
-    overflow-y: auto;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-}
-
-table {
+.input-box input, .input-box select {
     width: 100%;
-    border-collapse: collapse;
-    background: white;
+    height: 50px;
+    padding: 0 18px;
+    border: 2px solid #cbd5e0; /* Darker, crisp borders */
+    border-radius: 12px;
+    font-size: 1rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-thead {
-    position: sticky;
-    top: 0;
-    background: #4a90e2;
-    color: white;
+.input-box input:focus, .input-box select:focus {
+    border-color: #7ba6dc;
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(123, 166, 220, 0.15);
 }
 
-th, td {
-    padding: 12px;
-    text-align: center;
-    border-bottom: 1px solid #eee;
+/* Number Spinner Removal */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
 }
 
-.edit-icon { color: #4a90e2; cursor: pointer; font-size: 18px; }
-/* Container for the toggle buttons */
+/* 5. Toggle Buttons - Pill Style */
 .toggle-group {
     display: flex;
-    gap: 10px;
-    align-items: center;
-}
-
-/* Base style for the pill buttons */
-.toggle-btn {
-    width: 60px; /* Adjust width as needed */
-    padding: 6px 0;
-    border-radius: 20px; /* Creates the pill shape */
-    border: 1px solid #ccc;
-    background-color: white;
-    color: #333;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    outline: none;
-}
-
-/* Active/Selected state */
-.toggle-btn.active {
-    background-color: #7096d1; /* The blue color from your image */
-    color: white;
-    border-color: #7096d1;
-}
-
-/* Hover effect for unselected buttons */
-.toggle-btn:hover:not(.active) {
-    background-color: #f0f0f0;
-}
-/* Existing styles remain, but we update grid layouts */
-.manage-rooms-container {
-    padding: 10px; /* Reduced padding for mobile */
-    background-color: #f0f4f8;
-    border-radius: 12px;
-    font-family: sans-serif;
-    color: #333;
-}
-
-.form-card {
-    background: white;
-    padding: 15px; /* Reduced padding for mobile */
-    border-radius: 15px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-}
-
-/* Desktop First Grids */
-.input-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
     gap: 15px;
-    margin-bottom: 20px;
 }
 
-.benches-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr); /* Balanced for desktop */
-    gap: 10px;
-    margin-bottom: 20px;
+.toggle-btn {
+    flex: 1;
+    height: 50px;
+    border-radius: 12px;
+    border: 2px solid #cbd5e0;
+    background: white;
+    font-weight: 600;
+    color: #5b87c4;
+    cursor: pointer;
+    transition: 0.3s;
 }
 
-/* TABLE RESPONSIVENESS */
-.table-container {
-    margin-top: 20px;
-    max-height: 450px;
-    overflow-x: auto; /* Horizontal scroll for small screens */
-    overflow-y: auto;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    -webkit-overflow-scrolling: touch;
+.toggle-btn.active {
+    background: #5b87c4;
+    color: white;
+    border-color: #5b87c4;
+    box-shadow: 0 4px 12px rgba(91, 135, 196, 0.3);
 }
 
-table {
-    width: 100%;
-    min-width: 800px; /* Forces scroll instead of squishing columns */
-    border-collapse: collapse;
+/* 6. Action Button */
+.action-row {
+    display: flex;
+    justify-content: flex-end; /* Keeps the button clean on the right */
+}
+
+.submit-batch-btn.small-btn {
+    padding: 15px 50px;
+    background: #5b87c4;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: 0.3s;
+    box-shadow: 0 6px 15px rgba(91, 135, 196, 0.3);
+}
+
+.submit-batch-btn.small-btn:hover {
+    background: #3d5d8a;
+    transform: translateY(-2px);
+}
+
+/* 7. Table Styling */
+.table-section {
+    border-radius: 15px;
+    overflow: hidden;
+    border: 1px solid #cbd5e0;
     background: white;
 }
 
-/* MOBILE RESPONSIVE QUERIES */
-@media screen and (max-width: 768px) {
-    .input-grid {
-        grid-template-columns: 1fr 1fr; /* 2 columns on tablets/large phones */
-    }
-
-    .benches-grid {
-        grid-template-columns: 1fr 1fr; /* 2 columns for bench selectors */
-    }
-    
-    .save-btn {
-        width: 100%; /* Full width button on mobile */
-        padding: 15px;
-    }
+.student-table {
+    width: 100%;
+    border-collapse: collapse;
 }
 
-@media screen and (max-width: 480px) {
-    .input-grid {
-        grid-template-columns: 1fr; /* 1 column on small phones */
-    }
-
-    .toggle-group {
-        justify-content: flex-start;
-    }
+.student-table th {
+    background-color: #f1f5f9;
+    color: #3d5d8a;
+    font-weight: 700;
+    padding: 22px;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+    border-bottom: 2px solid #cbd5e0;
 }
 
-/* Style for the Edit Icon Button */
-.edit-icon { 
-    color: #4a90e2; 
-    cursor: pointer; 
-    font-size: 20px;
-    padding: 5px;
+.student-table td {
+    padding: 20px;
+    text-align: center;
+    color: #2d3748;
+    border-bottom: 1px solid #e2e8f0;
 }
 
-/* Rest of your toggle-btn and general styles... */
+.student-table tr:hover {
+    background-color: #f8fafc;
+}
+
+.edit-btn {
+    color: #7ba6dc;
+    font-size: 1.3rem;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.edit-btn:hover {
+    transform: scale(1.2);
+}

@@ -1,0 +1,232 @@
+/* 1. Dashboard Layout */
+.dashboard-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: linear-gradient(135deg, #7ba6dc 0%, #5b87c4 100%);
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  padding: 40px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 2. The White Card */
+.manage-card {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  padding: 45px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  width: 95%;
+  max-width: 1200px;
+  margin-top: 10px;
+  box-sizing: border-box;
+}
+
+.card-title { 
+  color: #3d5d8a; 
+  margin-bottom: 35px; 
+  font-size: 1.7rem; 
+  font-weight: 700;
+  border-left: 6px solid #7ba6dc;
+  padding-left: 20px;
+}
+
+/* 3. Form Section */
+.form-section {
+  background-color: #ffffff;
+  padding: 30px;
+  border-radius: 15px;
+  border: 1px solid #cbd5e0;
+  margin-bottom: 40px;
+}
+
+.input-grid {
+  display: flex;
+  gap: 30px;
+  align-items: flex-end;
+}
+
+.input-box { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 12px; 
+  flex: 1; 
+}
+
+.input-box label { 
+  font-weight: 700; 
+  color: #4a5568; 
+  font-size: 0.95rem; 
+}
+
+/* 4. Year Stepper Styling */
+.year-stepper {
+  display: flex;
+  align-items: center;
+  border: 2px solid #cbd5e0;
+  border-radius: 12px;
+  overflow: hidden;
+  height: 50px;
+}
+
+.step-btn {
+  background-color: #f1f5f9;
+  border: none;
+  color: #5b87c4;
+  width: 50px;
+  height: 100%;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+}
+
+.step-btn:hover:not(:disabled) {
+  background-color: #cbd5e0;
+  color: #3d5d8a;
+}
+
+.step-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.year-input {
+  flex: 1;
+  border: none;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #3d5d8a;
+  width: 80px;
+  background: white;
+  outline: none;
+}
+
+/* 5. Inputs */
+.main-input {
+  padding: 0 15px;
+  font-size: 1rem;
+  border: 2px solid #cbd5e0;
+  border-radius: 12px;
+  height: 50px;
+  background-color: #ffffff;
+  transition: all 0.3s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.main-input:focus {
+  border-color: #7ba6dc;
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(123, 166, 220, 0.15);
+}
+
+.button-group {
+  flex: 0 0 auto;
+  flex-direction: row !important;
+  gap: 12px;
+}
+
+/* 6. Action Buttons */
+.submit-batch-btn {
+  height: 50px;
+  padding: 0 35px;
+  background: #5b87c4;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 15px rgba(91, 135, 196, 0.3);
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.submit-batch-btn:hover {
+  background: #3d5d8a;
+  transform: translateY(-2px);
+}
+
+.cancel-btn {
+  height: 50px;
+  padding: 0 20px;
+  background: #e2e8f0;
+  color: #4a5568;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 7. Table Design - Fixed Alignment */
+.table-section {
+  border: 1px solid #cbd5e0;
+  border-radius: 15px;
+  overflow: hidden;
+  background: white;
+}
+
+.student-table { 
+  width: 100%; 
+  border-collapse: collapse;
+}
+
+.student-table th { 
+  background: #f1f5f9; 
+  text-align: center; /* Changed from left to center */
+  padding: 22px; 
+  color: #3d5d8a; 
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  border-bottom: 2px solid #cbd5e0;
+}
+
+.student-table td { 
+  padding: 18px; 
+  text-align: center; /* Ensures data is centered under headings */
+  border-bottom: 1px solid #e2e8f0; 
+  color: #2d3748;
+}
+
+.student-table tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Increased spacing for Table Icons */
+.action-cell { 
+  display: flex; 
+  gap: 45px; 
+  align-items: center;
+  justify-content: center; /* Keeps icons centered in the column */
+  min-height: 50px; /* Ensures consistent row height */
+}
+
+.edit-btn { 
+  color: #7ba6dc; 
+  cursor: pointer; 
+  font-size: 1.3rem; 
+  transition: 0.2s;
+}
+
+.delete-btn { 
+  color: #e74c3c; 
+  cursor: pointer; 
+  font-size: 1.2rem; 
+  transition: 0.2s;
+}
+
+.edit-btn:hover, .delete-btn:hover {
+  transform: scale(1.25);
+}

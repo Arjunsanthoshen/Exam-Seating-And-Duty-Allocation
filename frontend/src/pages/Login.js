@@ -1,22 +1,59 @@
-import React from "react";
-import "./Login.css"; // Make sure to import the CSS file
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import "./Login.css";
 
 function Login() {
+  const navigate = useNavigate();
+
+  const [role, setRole] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+
+    const res = await fetch("http://localhost:5000/api/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        username,
+        password,
+        role
+      })
+    });
+
+    const data = await res.json();
+
+  if (res.ok) {
+  // Use the specific component-based paths
+  if (data.role === "admin") navigate("/ExamStatusBoard");
+  if (data.role === "teacher") navigate("/MyDutySchedule");
+  if (data.role === "student") navigate("/ExamHall");
+} else {
+  alert(data.message);
+}
+  };
+
   return (
     <div className="login-wrapper">
       <div className="login-card">
-        {/* Header Section */}
         <div className="login-header">
           <h1>Exam Seating System</h1>
           <p>Please enter your details to continue</p>
         </div>
 
-        {/* Form Section */}
-        <form className="login-form" onSubmit={(e) => e.preventDefault()}>
+        <form className="login-form" onSubmit={handleLogin}>
           <div className="form-group">
-            <label htmlFor="role">Select Role</label>
-            <select id="role" className="form-control">
-              <option value="" disabled selected>Select Role</option>
+            <label>Select Role</label>
+            <select
+              className="form-control"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              required
+            >
+              <option value="">Select Role</option>
               <option value="admin">Admin</option>
               <option value="teacher">Teacher</option>
               <option value="student">Student</option>
@@ -24,22 +61,26 @@ function Login() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="username">Username / Email</label>
-            <input 
-              id="username"
-              type="text" 
-              className="form-control" 
-              placeholder="e.g. johndoe2027@sjcetpalai.ac.in" 
+            <label>Username (Email)</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="admin@sjcetpalai.ac.in"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input 
-              id="password"
-              type="password" 
-              className="form-control" 
-              placeholder="Enter your password" 
+            <label>Password</label>
+            <input
+              type="password"
+              className="form-control"
+              placeholder="Enter password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
             />
           </div>
 
@@ -47,10 +88,6 @@ function Login() {
             Login
           </button>
         </form>
-        
-        <div className="login-footer">
-          <p>Forgot Password? <button type="button" className="link-btn">That's Your Fault</button></p>
-        </div>
       </div>
     </div>
   );

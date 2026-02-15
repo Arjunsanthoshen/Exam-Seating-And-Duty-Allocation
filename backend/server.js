@@ -2,59 +2,159 @@ const express = require("express");
 const mysql = require("mysql2");
 const cors = require('cors');
 
-
 const app = express();
+
+// ----------------------------------------------------------------------------
+//                              MIDDLEWARE
+// ----------------------------------------------------------------------------
 app.use(cors());
 app.use(express.json());
 
-// -------------------- DATABASE CONNECTION --------------------
+// ----------------------------------------------------------------------------
+//                          DATABASE CONNECTION
+// ----------------------------------------------------------------------------
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "tree",
-  database: "college"
+    host: "localhost",
+    user: "root",
+    password: "tree",
+    database: "college"
 });
 
-// Test DB connection
 db.connect((err) => {
-  if (err) {
-    console.log("Database connection failed:", err);
-  } else {
-    console.log("Connected to MariaDB!");
-  }
+    if (err) {
+        console.error("Database connection failed:", err);
+    } else {
+        console.log("Connected to MariaDB successfully!");
+    }
 });
-//------------------------ManageRooms-------------------------
-//get all rooms
+
+// ----------------------------------------------------------------------------
+//                        STUDENT MANAGEMENT ROUTES
+// ----------------------------------------------------------------------------
+
+// GET: Fetch all student records
+app.get('/api/students', (req, res) => {
+    const query = 'SELECT year_of_join, branch, Branch_Strength FROM Student_manage ORDER BY year_of_join DESC, branch ASC';
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Fetch Error:", err);
+            return res.status(500).json({ error: "Database fetch failed" });
+        }
+        res.json(results);
+    });
+});
+
+// POST: Add new batch
+app.post('/api/students/add', (req, res) => {
+    const { year, branch, strength } = req.body;
+
+    const checkQuery = 'SELECT * FROM Student_manage WHERE year_of_join = ? AND branch = ?';
+    db.query(checkQuery, [year, branch], (err, results) => {
+        if (err) return res.status(500).json(err);
+        
+        if (results.length > 0) {
+            return res.status(409).json({ message: `Record for ${branch} ${year} already exists!` });
+        }
+
+        const insertQuery = `INSERT INTO Student_manage (year_of_join, branch, Branch_Strength, stid) VALUES (?, ?, ?, 1)`;
+        db.query(insertQuery, [year, branch, strength], (err, result) => {
+            if (err) {
+                console.error("Insert Error:", err);
+                return res.status(500).json(err);
+            }
+            res.status(200).json({ message: 'Record saved successfully' });
+        });
+    });
+});
+
+// PUT: Update an existing record
+app.put('/api/students/update', (req, res) => {
+    const { year, branch, strength } = req.body;
+    const query = `UPDATE Student_manage SET Branch_Strength = ? WHERE year_of_join = ? AND branch = ?`;
+    
+    db.query(query, [strength, year, branch], (err, result) => {
+        if (err) {
+            console.error("Update Error:", err);
+            return res.status(500).json(err);
+        }
+        res.json({ message: "Record updated successfully" });
+    });
+});
+
+// DELETE: Remove a student record
+app.delete('/api/students/:year/:branch', (req, res) => {
+    const { year, branch } = req.params;
+    const query = `DELETE FROM Student_manage WHERE year_of_join = ? AND branch = ?`;
+    db.query(query, [year, branch], (err, result) => {
+        if (err) {
+            console.error("Delete Error:", err);
+            return res.status(500).json(err);
+        }
+        res.json({ message: "Record deleted successfully" });
+    });
+});
+
+// ----------------------------------------------------------------------------
+//                            MANAGE ROOMS ROUTES
+// ----------------------------------------------------------------------------
+
 app.get('/api/rooms', (req, res) => {
-    db.query('SELECT * FROM Rooms', (err, results) => {
+    db.query('SELECT * FROM Rooms ORDER BY block ASC, room_no ASC', (err, results) => {
         if (err) return res.status(500).json(err);
         res.json(results);
     });
 });
 
-// POST a new room
 app.post('/api/rooms', (req, res) => {
     const { room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5 } = req.body;
     const query = `INSERT INTO Rooms (room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5) 
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
                    ON DUPLICATE KEY UPDATE block=?, capacity=?, cap_per_bench=?, col1=?, col2=?, col3=?, col4=?, col5=?`;
-    
-    const values = [room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5, 
-                    block, capacity, cap_per_bench, col1, col2, col3, col4, col5];
-
+    const values = [
+        room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5, 
+        block, capacity, cap_per_bench, col1, col2, col3, col4, col5
+    ];
     db.query(query, values, (err, result) => {
-        if (err) return res.status(500).json(err);
+        if (err) {
+            console.error("Room Save Error:", err);
+            return res.status(500).json(err);
+        }
         res.status(200).json({ message: 'Room saved successfully' });
     });
 });
 
-
-// -------------------- TEST ROUTE --------------------
-app.get("/", (req, res) => {
-  res.send("Backend running");
+// DELETE: Remove a room
+app.delete('/api/rooms/:room_no', (req, res) => {
+    const { room_no } = req.params;
+    db.query('DELETE FROM Rooms WHERE room_no = ?', [room_no], (err, result) => {
+        if (err) return res.status(500).json(err);
+        res.json({ message: "Room deleted successfully" });
+    });
 });
 
-// -------------------- SERVER --------------------
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
+// ----------------------------------------------------------------------------
+//                              LOGIN ROUTES
+// ----------------------------------------------------------------------------
+
+app.post("/api/login", (req, res) => {
+    const { username, password, role } = req.body;
+    const query = `SELECT * FROM Users WHERE username = ? AND password = ? AND role = ?`;
+    db.query(query, [username, password, role], (err, results) => {
+        if (err) {
+            console.error("Login Error:", err);
+            return res.status(500).json({ message: "Server error" });
+        }
+        if (results.length > 0) res.json({ success: true, role: role });
+        else res.status(401).json({ success: false, message: "Invalid credentials" });
+    });
+});
+
+// ----------------------------------------------------------------------------
+//                              SERVER START
+// ----------------------------------------------------------------------------
+const PORT = 5000;
+app.listen(PORT, () => {
+    console.log("-------------------------------------------");
+    console.log(` Server running on http://localhost:${PORT} `);
+    console.log("-------------------------------------------");
 });
