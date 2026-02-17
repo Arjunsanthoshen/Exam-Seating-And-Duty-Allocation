@@ -88,8 +88,8 @@ app.post('/api/rooms', (req, res) => {
     const { room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5 } = req.body;
     const query = `INSERT INTO Rooms (room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5) 
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                   ON DUPLICATE KEY UPDATE block=?, capacity=?, cap_per_bench=?, col1=?, col2=?, col3=?, col4=?, col5=?`;
-    const values = [room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5, block, capacity, cap_per_bench, col1, col2, col3, col4, col5];
+                   ON DUPLICATE KEY UPDATE capacity=?, cap_per_bench=?, col1=?, col2=?, col3=?, col4=?, col5=?`;
+    const values = [room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5, capacity, cap_per_bench, col1, col2, col3, col4, col5];
     db.query(query, values, (err, result) => {
         if (err) return res.status(500).json(err);
         res.status(200).json({ message: 'Room saved successfully' });
@@ -158,38 +158,32 @@ app.put('/api/teachers/availability', (req, res) => {
 app.get('/api/exam-schedule', (req, res) => {
     const query = 'SELECT * FROM Exam_schedule ORDER BY exam_date DESC, year ASC';
     db.query(query, (err, results) => {
-        if (err) {
-            console.error("Fetch Error:", err.message);
-            return res.status(500).json(err);
-        }
+        if (err) return res.status(500).json(err);
         res.json(results);
     });
 });
 
-// POST: Add new schedules (Batch Insert)
+// POST: Add new schedules (Handles multiple branch subjects via Batch Insert)
 app.post('/api/exam-schedule/add', (req, res) => {
     const { year, date, session, subjects, examNumber } = req.body;
-
-    // Filter out branches with empty subject strings and map to nested array for bulk insert
-    const values = Object.entries(subjects)
-        .filter(([_, name]) => name && name.trim() !== "")
-        .map(([branch, name]) => [year, examNumber, date, session, branch, name]);
-
-    if (values.length === 0) return res.status(400).json({ error: "No subjects to save" });
-
-    // Ensure table structure has (year, exam_number, exam_date, session, branch, subject)
-    const query = `INSERT INTO Exam_schedule (year, exam_number, exam_date, session, branch, subject) VALUES ?`;
     
+    // Filter out branches that have no subject name entered and map to nested array for batch insert
+    const values = Object.entries(subjects)
+        .filter(([_, name]) => name && name.trim() !== "") 
+        .map(([branch, name]) => [year, examNumber || '1', date, session, branch, name]);
+
+    if (values.length === 0) {
+        return res.status(400).json({ error: "No subjects to save" });
+    }
+
+    const query = `INSERT INTO Exam_schedule (year, exam_number, exam_date, session, branch, subject) VALUES ?`;
     db.query(query, [values], (err, result) => {
-        if (err) {
-            console.error("--- SQL INSERT ERROR ---", err.message);
-            return res.status(500).json({ error: err.message });
-        }
-        res.status(200).json({ message: "Schedule saved successfully!" });
+        if (err) return res.status(500).json({ error: err.message });
+        res.status(200).json({ message: "Schedule saved successfully!", count: result.affectedRows });
     });
 });
 
-// DELETE: Remove a single entry
+// DELETE: Remove a single subject entry
 app.delete('/api/exam-schedule/:id', (req, res) => {
     const { id } = req.params;
     db.query('DELETE FROM Exam_schedule WHERE exam_id = ?', [id], (err) => {
@@ -203,16 +197,13 @@ app.post('/api/exam-schedule/update/:id', (req, res) => {
     const { id } = req.params;
     const { year, date, session, subjects, examNumber } = req.body;
     
-    // Find which branch was being edited in the frontend subjects object
+    // Logic: Find which branch was being edited in the frontend subjects object
     const branch = Object.keys(subjects).find(b => subjects[b] !== "");
     const subjectName = subjects[branch];
 
     const query = `UPDATE Exam_schedule SET year=?, exam_number=?, exam_date=?, session=?, branch=?, subject=? WHERE exam_id=?`;
-    db.query(query, [year, examNumber, date, session, branch, subjectName, id], (err) => {
-        if (err) {
-            console.error("--- SQL UPDATE ERROR ---", err.message);
-            return res.status(500).json(err);
-        }
+    db.query(query, [year, examNumber || '1', date, session, branch, subjectName, id], (err) => {
+        if (err) return res.status(500).json(err);
         res.json({ message: "Updated successfully" });
     });
 });
