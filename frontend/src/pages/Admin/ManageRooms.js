@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminSidebar from './AdminSidebar'; 
-import { FaEdit } from 'react-icons/fa';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import './ManageRooms.css';
 
 const ManageRooms = () => {
@@ -45,6 +45,20 @@ const ManageRooms = () => {
     const handleEdit = (room) => {
         setFormData(room);
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleDelete = async (block, room_no) => {
+        if (window.confirm(`Are you sure you want to delete room ${room_no} in block ${block}?`)) {
+            try {
+                // Updated to pass both block and room_no in the URL
+                await axios.delete(`http://localhost:5000/api/rooms/${block}/${room_no}`);
+                alert("Room deleted successfully");
+                fetchRooms(); // Refresh the table
+            } catch (err) {
+                console.error("Delete Error:", err);
+                alert("Failed to delete room");
+            }
+        }
     };
 
     return (
@@ -145,7 +159,7 @@ const ManageRooms = () => {
                                     <th>C3</th>
                                     <th>C4</th>
                                     <th>C5</th>
-                                    <th>Edit</th>
+                                    <th>Actions</th> {/* Renamed from Edit */}
                                 </tr>
                             </thead>
                             <tbody>
@@ -160,8 +174,17 @@ const ManageRooms = () => {
                                         <td>{room.col3 || '0'}</td>
                                         <td>{room.col4 || '0'}</td>
                                         <td>{room.col5 || '0'}</td>
-                                        <td>
-                                            <FaEdit className="edit-btn" onClick={() => handleEdit(room)} />
+                                        <td className="action-cell">
+                                            <FaEdit 
+                                                className="edit-btn" 
+                                                onClick={() => handleEdit(room)} 
+                                                title="Edit"
+                                            />
+                                            <FaTrash 
+                                                className="delete-btn" 
+                                                onClick={() => handleDelete(room.block, room.room_no)} 
+                                                title="Delete"
+                                            />
                                         </td>
                                     </tr>
                                 ))}

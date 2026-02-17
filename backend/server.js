@@ -124,10 +124,15 @@ app.post('/api/rooms', (req, res) => {
 });
 
 // DELETE: Remove a room
-app.delete('/api/rooms/:room_no', (req, res) => {
-    const { room_no } = req.params;
-    db.query('DELETE FROM Rooms WHERE room_no = ?', [room_no], (err, result) => {
-        if (err) return res.status(500).json(err);
+app.delete('/api/rooms/:block/:room_no', (req, res) => {
+    const { block, room_no } = req.params;
+    const query = 'DELETE FROM Rooms WHERE block = ? AND room_no = ?';
+    
+    db.query(query, [block, room_no], (err, result) => {
+        if (err) {
+            console.error("Delete Error:", err);
+            return res.status(500).json(err);
+        }
         res.json({ message: "Room deleted successfully" });
     });
 });

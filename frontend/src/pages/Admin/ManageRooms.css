@@ -207,3 +207,30 @@ input[type=number]::-webkit-outer-spin-button {
 .edit-btn:hover {
     transform: scale(1.2);
 }
+/* Container for the icons in the table cell */
+.action-cell {
+    display: flex;
+    justify-content: center;
+    gap: 15px; /* Space between edit and delete icons */
+    align-items: center;
+}
+
+/* Edit Icon Style */
+.edit-btn {
+    color: #4a90e2; /* Blue color */
+    cursor: pointer;
+    font-size: 18px;
+    transition: transform 0.2s;
+}
+
+/* Delete Icon Style */
+.delete-btn {
+    color: #e74c3c; /* Red color from your image */
+    cursor: pointer;
+    font-size: 18px;
+    transition: transform 0.2s;
+}
+
+.edit-btn:hover, .delete-btn:hover {
+    transform: scale(1.2);
+}
