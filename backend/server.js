@@ -24,7 +24,7 @@ db.connect((err) => {
     if (err) {
         console.error("Database connection failed:", err);
     } else {
-        console.log("Connected to MariaDB successfully!");
+        console.log("Connected to mysql successfully!");
     }
 });
 
