@@ -107,9 +107,9 @@ app.get('/api/rooms', (req, res) => {
 
 app.post('/api/rooms', (req, res) => {
     const { room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5 } = req.body;
-    const query = `INSERT INTO Rooms (room_no, capacity, cap_per_bench, col1, col2, col3, col4, col5) 
+    const query = `INSERT INTO Rooms (room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5) 
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                   ON DUPLICATE KEY UPDATE block=?, capacity=?, cap_per_bench=?, col1=?, col2=?, col3=?, col4=?, col5=?`;
+                   ON DUPLICATE KEY UPDATE capacity=?, cap_per_bench=?, col1=?, col2=?, col3=?, col4=?, col5=?`;
     const values = [
         room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5, 
         capacity, cap_per_bench, col1, col2, col3, col4, col5
