@@ -5,21 +5,20 @@ import { FaEdit, FaTrash } from "react-icons/fa";
 import './ExamSchedule.css';
 
 const ExamSchedule = () => {
+
+    const branchList = ["CS", "AD", "CY", "ME", "EE", "EC", "ES", "CE"];
+
     const [year, setYear] = useState(1);
     const [examNumber, setExamNumber] = useState('1');
     const [date, setDate] = useState('');
     const [session, setSession] = useState('FN');
-    const [subjects, setSubjects] = useState({
-        CS: '', AD: '', CY: '', ME: '', EE: '', EC: '', ES: '', CE: ''
-    });
+    const [subjects, setSubjects] = useState(
+        branchList.reduce((acc, b) => ({ ...acc, [b]: '' }), {})
+    );
     const [savedSchedules, setSavedSchedules] = useState([]);
     const [editingId, setEditingId] = useState(null);
 
-    const branchList = ["CS", "AD", "CY", "ME", "EE", "EC", "ES", "CE"];
-
-    useEffect(() => {
-        fetchSchedules();
-    }, []);
+    useEffect(() => { fetchSchedules(); }, []);
 
     const fetchSchedules = async () => {
         try {
@@ -30,34 +29,31 @@ const ExamSchedule = () => {
         }
     };
 
-    const handleSubjectChange = (branch, value) => {
-        setSubjects({ ...subjects, [branch]: value });
-    };
-
     const handleSave = async () => {
         if (!date) return alert("Please select a date!");
-        
-        // Ensure at least one subject is filled
+
         const hasData = Object.values(subjects).some(s => s.trim() !== "");
-        if(!hasData) return alert("Please enter at least one subject!");
+        if (!hasData) return alert("Enter at least one subject!");
 
         try {
             if (editingId) {
-                await axios.post(`http://localhost:5000/api/exam-schedule/update/${editingId}`, {
-                    year, date, session, subjects, examNumber
-                });
-                alert("Schedule Updated!");
+                await axios.post(
+                    `http://localhost:5000/api/exam-schedule/update/${editingId}`,
+                    { year, date, session, subjects, examNumber }
+                );
             } else {
-                await axios.post('http://localhost:5000/api/exam-schedule/add', {
-                    year, date, session, subjects, examNumber
-                });
-                alert("Schedule Saved!");
+                await axios.post(
+                    'http://localhost:5000/api/exam-schedule/add',
+                    { year, date, session, subjects, examNumber }
+                );
             }
-            resetForm(); 
-            fetchSchedules(); // Refresh the table immediately
+
+            alert("Success!");
+            resetForm();
+            fetchSchedules();
+
         } catch (err) {
-            console.error("Save Error:", err);
-            alert("Error saving schedule. Check server console.");
+            alert("Error saving data.");
         }
     };
 
@@ -65,16 +61,14 @@ const ExamSchedule = () => {
         setEditingId(item.exam_id);
         setYear(item.year);
         setExamNumber(item.exam_number || '1');
-        if (item.exam_date) {
-            setDate(new Date(item.exam_date).toISOString().split('T')[0]);
-        }
+        setDate(item.exam_date?.split("T")[0] || '');
         setSession(item.session);
-        
-        // Clear all and set the specific branch being edited
-        const editSubjects = { CS: '', AD: '', CY: '', ME: '', EE: '', EC: '', ES: '', CE: '' };
-        editSubjects[item.branch] = item.subject;
-        setSubjects(editSubjects);
-        
+
+        const newSubjects = branchList.reduce((acc, b) => ({ ...acc, [b]: '' }), {});
+        newSubjects[item.branch] = item.subject;
+
+        setSubjects(newSubjects);
+
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -82,7 +76,7 @@ const ExamSchedule = () => {
         if (window.confirm("Delete this entry?")) {
             try {
                 await axios.delete(`http://localhost:5000/api/exam-schedule/${id}`);
-                fetchSchedules(); 
+                fetchSchedules();
             } catch (err) {
                 alert("Delete failed");
             }
@@ -92,7 +86,8 @@ const ExamSchedule = () => {
     const resetForm = () => {
         setEditingId(null);
         setDate('');
-        setSubjects({ CS: '', AD: '', CY: '', ME: '', EE: '', EC: '', ES: '', CE: '' });
+        setExamNumber('1');
+        setSubjects(branchList.reduce((acc, b) => ({ ...acc, [b]: '' }), {}));
     };
 
     return (
@@ -100,26 +95,36 @@ const ExamSchedule = () => {
             <AdminSidebar />
             <main className="main-content">
                 <div className="manage-card">
+
                     <h2 className="card-title">Exam Schedule Management</h2>
-                    
+
+                    {/* FORM SECTION */}
                     <div className="form-section">
+
                         <div className="top-controls">
+
                             <div className="input-box">
                                 <label>Year</label>
                                 <div className="year-stepper">
                                     {[1, 2, 3, 4].map(y => (
-                                        <button 
-                                            key={y} 
-                                            className={`step-btn ${year === y ? 'active' : ''}`} 
+                                        <button
+                                            key={y}
+                                            className={`step-btn ${year === y ? 'active' : ''}`}
                                             onClick={() => setYear(y)}
-                                        >{y}</button>
+                                        >
+                                            {y}
+                                        </button>
                                     ))}
                                 </div>
                             </div>
-                            
+
                             <div className="input-box">
                                 <label>Exam Number</label>
-                                <select className="main-input" value={examNumber} onChange={(e) => setExamNumber(e.target.value)}>
+                                <select
+                                    className="main-input"
+                                    value={examNumber}
+                                    onChange={(e) => setExamNumber(e.target.value)}
+                                >
                                     <option value="1">Exam 1</option>
                                     <option value="2">Exam 2</option>
                                     <option value="3">Exam 3</option>
@@ -128,28 +133,41 @@ const ExamSchedule = () => {
 
                             <div className="input-box">
                                 <label>Date</label>
-                                <input type="date" className="main-input" value={date} onChange={(e) => setDate(e.target.value)} />
+                                <input
+                                    type="date"
+                                    className="main-input"
+                                    value={date}
+                                    onChange={(e) => setDate(e.target.value)}
+                                />
                             </div>
 
                             <div className="input-box">
                                 <label>Session</label>
-                                <select className="main-input" value={session} onChange={(e) => setSession(e.target.value)}>
+                                <select
+                                    className="main-input"
+                                    value={session}
+                                    onChange={(e) => setSession(e.target.value)}
+                                >
                                     <option value="FN">FN</option>
                                     <option value="AN">AN</option>
                                 </select>
                             </div>
+
                         </div>
 
+                        {/* SUBJECT GRID */}
                         <div className="subjects-grid">
                             {branchList.map(branch => (
                                 <div key={branch} className="subject-input-group">
                                     <span className="branch-label">{branch}:</span>
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         className="subject-input"
                                         placeholder="Subject Name"
                                         value={subjects[branch]}
-                                        onChange={(e) => handleSubjectChange(branch, e.target.value)}
+                                        onChange={(e) =>
+                                            setSubjects({ ...subjects, [branch]: e.target.value })
+                                        }
                                     />
                                 </div>
                             ))}
@@ -159,20 +177,27 @@ const ExamSchedule = () => {
                             <button className="save-btn" onClick={handleSave}>
                                 {editingId ? "Update Schedule" : "Save Schedule"}
                             </button>
-                            {editingId && <button className="cancel-btn" onClick={resetForm}>Cancel</button>}
+
+                            {editingId &&
+                                <button className="cancel-btn" onClick={resetForm}>
+                                    Cancel
+                                </button>}
                         </div>
+
                     </div>
 
+                    {/* TABLE SECTION */}
                     <div className="table-section">
                         <table className="schedule-table">
                             <thead>
                                 <tr>
                                     <th>Year</th>
+                                    <th>Exam No.</th>
                                     <th>Date</th>
                                     <th>Session</th>
                                     <th>Branch</th>
                                     <th>Subject</th>
-                                    <th className="text-center">Actions</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -180,22 +205,38 @@ const ExamSchedule = () => {
                                     savedSchedules.map((s) => (
                                         <tr key={s.exam_id}>
                                             <td>{s.year}</td>
-                                            <td>{s.exam_date ? new Date(s.exam_date).toLocaleDateString('en-GB') : ''}</td>
-                                            <td><span className={`badge ${s.session}`}>{s.session}</span></td>
+                                            <td>{s.exam_number}</td>
+                                            <td>{new Date(s.exam_date).toLocaleDateString('en-GB')}</td>
+                                            <td>
+                                                <span className={`badge ${s.session}`}>
+                                                    {s.session}
+                                                </span>
+                                            </td>
                                             <td className="branch-col">{s.branch}</td>
                                             <td>{s.subject}</td>
                                             <td className="action-cell">
-                                                <FaEdit className="icon-edit" onClick={() => handleEdit(s)} />
-                                                <FaTrash className="icon-delete" onClick={() => handleDelete(s.exam_id)} />
+                                                <FaEdit
+                                                    className="icon-edit"
+                                                    onClick={() => handleEdit(s)}
+                                                />
+                                                <FaTrash
+                                                    className="icon-delete"
+                                                    onClick={() => handleDelete(s.exam_id)}
+                                                />
                                             </td>
                                         </tr>
                                     ))
                                 ) : (
-                                    <tr><td colSpan="6" className="no-data">No schedules found</td></tr>
+                                    <tr>
+                                        <td colSpan="7" className="no-data">
+                                            No schedules found
+                                        </td>
+                                    </tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
+
                 </div>
             </main>
         </div>
