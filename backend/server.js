@@ -162,6 +162,7 @@ app.delete('/api/blocks/:name', (req, res) => {
     });
 });
 
+// POST: Add or update a room
 app.post('/api/rooms', (req, res) => {
     const { room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5 } = req.body;
     const query = `
@@ -181,14 +182,6 @@ app.post('/api/rooms', (req, res) => {
         if (err) return res.status(500).json(err);
         res.json({ message: "Room saved successfully" });
     });
-});
-
-app.delete('/api/rooms/:room_no', (req, res) => {
-    db.query('DELETE FROM Rooms WHERE room_no = ?', [req.params.room_no],
-        (err) => {
-            if (err) return res.status(500).json(err);
-            res.json({ message: "Room deleted successfully" });
-        });
 });
 
 /* -------------------------------------------------------------------------- */
