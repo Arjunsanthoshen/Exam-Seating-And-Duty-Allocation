@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminSidebar from './AdminSidebar'; 
-import { FaEdit, FaTrash } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaPlus, FaMinus } from 'react-icons/fa';
 import './ManageRooms.css';
 
 const ManageRooms = () => {
@@ -10,13 +10,52 @@ const ManageRooms = () => {
         block: '', room_no: '', capacity: 30, cap_per_bench: 1,
         col1: 0, col2: 0, col3: 0, col4: 0, col5: 0
     });
-
+    const [blocks, setBlocks] = useState([]);
+    const [newBlockName, setNewBlockName] = useState("");
     const benchOptions = ["Nil", 5, 6, 7, 8, 9, 10];
-    const blockOptions = ["MTB", "SJB", "SJPB", "SPB", "SFB"];
+    // const blockOptions = ["MTB", "SJB", "SJPB", "SPB", "SFB"];
 
     useEffect(() => {
         fetchRooms();
+        fetchBlocks();
     }, []);
+
+    const fetchBlocks = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/blocks');
+            setBlocks(res.data);
+        } catch (err) {
+            console.error("Error fetching blocks", err);
+        }
+    };
+
+    const blockOptions = blocks.map(b => b.block_name);
+
+    const handleAddBlock = async () => {
+        if (!newBlockName.trim()) return alert("Enter a block name");
+        try {
+            await axios.post('http://localhost:5000/api/blocks', { block_name: newBlockName.toUpperCase() });
+            setNewBlockName("");
+            fetchBlocks();
+            alert("Block added!");
+        } catch (err) {
+            alert(err.response?.data?.message || "Error adding block");
+        }
+    };
+
+    const handleDeleteBlock = async () => {
+        if (!newBlockName.trim()) return alert("Enter block name to delete");
+        if (window.confirm(`Delete block ${newBlockName}?`)) {
+            try {
+                await axios.delete(`http://localhost:5000/api/blocks/${newBlockName.toUpperCase()}`);
+                setNewBlockName("");
+                fetchBlocks();
+                alert("Block removed!");
+            } catch (err) {
+                alert("Error deleting block. Ensure it's not in use.");
+            }
+        }
+    };
 
     const fetchRooms = async () => {
         try {
@@ -68,7 +107,24 @@ const ManageRooms = () => {
             <main className="main-content">
                 <div className="manage-card">
                     <h2 className="card-title">Manage Rooms</h2>
-                    
+                    <div className="block-management-section">
+                        <h4 className="sub-title">Block Management</h4>
+                        <div className="block-controls">
+                            <input 
+                                type="text" 
+                                className="main-input block-input"
+                                placeholder="Enter block name (e.g. MTB)" 
+                                value={newBlockName} 
+                                onChange={(e) => setNewBlockName(e.target.value)} 
+                            />
+                            <button className="icon-btn add-btn" onClick={handleAddBlock} title="Add Block">
+                                <FaPlus />
+                            </button>
+                            <button className="icon-btn remove-btn" onClick={handleDeleteBlock} title="Delete Block">
+                                <FaMinus />
+                            </button>
+                        </div>
+                    </div>
                     <div className="form-section">
                         <div className="input-grid">
                             <div className="input-box">

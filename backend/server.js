@@ -137,6 +137,36 @@ app.delete('/api/rooms/:block/:room_no', (req, res) => {
     });
 });
 
+// GET: Fetch all block names
+app.get('/api/blocks', (req, res) => {
+    db.query('SELECT block_name FROM blocks ORDER BY block_name ASC', (err, results) => {
+        if (err) return res.status(500).json(err);
+        res.json(results);
+    });
+});
+
+// POST: Add a new block
+app.post('/api/blocks', (req, res) => {
+    const { block_name } = req.body;
+    if (!block_name) return res.status(400).json({ message: "Block name is required" });
+
+    db.query('INSERT INTO blocks (block_name) VALUES (?)', [block_name], (err, result) => {
+        if (err) {
+            if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: "Block already exists" });
+            return res.status(500).json(err);
+        }
+        res.status(200).json({ message: 'Block added successfully' });
+    });
+});
+
+// DELETE: Remove a block
+app.delete('/api/blocks/:name', (req, res) => {
+    const blockName = req.params.name;
+    db.query('DELETE FROM blocks WHERE block_name = ?', [blockName], (err, result) => {
+        if (err) return res.status(500).json(err);
+        res.json({ message: "Block deleted successfully" });
+    });
+});
 
 // ----------------------------------------------------------------------------
 //                        MANAGE TEACHERS ROUTES
