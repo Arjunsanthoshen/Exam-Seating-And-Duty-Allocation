@@ -1,0 +1,190 @@
+.dashboard-container {
+    display: flex;
+    background: #f4f7fe;
+    min-height: 100vh;
+}
+
+.main-content {
+    flex: 1;
+    padding: 40px;
+}
+
+.manage-card {
+    background: white;
+    border-radius: 18px;
+    padding: 30px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+}
+
+.card-title {
+    color: #2b3674;
+    border-left: 6px solid #4318ff;
+    padding-left: 15px;
+    margin-bottom: 30px;
+    font-size: 22px;
+}
+
+.top-controls {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+}
+
+.input-box {
+    flex: 1;
+    min-width: 200px;
+}
+
+.input-box label {
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+    color: #1b2559;
+}
+
+.year-stepper {
+    display: flex;
+    border: 1px solid #e0e5f2;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.step-btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    background: white;
+    cursor: pointer;
+    color: #a3aed0;
+    font-weight: 600;
+}
+
+.step-btn.active {
+    background: #4318ff;
+    color: white;
+}
+
+.main-input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #e0e5f2;
+}
+
+.subjects-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    margin-bottom: 30px;
+}
+
+.subject-input-group {
+    display: flex;
+    align-items: center;
+    border: 1px solid #e0e5f2;
+    border-radius: 12px;
+    padding: 0 12px;
+}
+
+.branch-label {
+    width: 50px;
+    font-weight: bold;
+    color: #4318ff;
+}
+
+.subject-input {
+    border: none;
+    outline: none;
+    padding: 12px;
+    width: 100%;
+}
+
+.button-group {
+    margin-top: 10px;
+}
+
+.save-btn {
+    background: linear-gradient(90deg, #4318ff, #7a5cff);
+    color: white;
+    padding: 12px 35px;
+    border: none;
+    border-radius: 12px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.cancel-btn {
+    background: #eef1f9;
+    margin-left: 10px;
+    padding: 12px 25px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+}
+
+.table-section {
+    margin-top: 50px;
+}
+
+.schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.schedule-table th {
+    background: #f4f7fe;
+    padding: 14px;
+    text-align: left;
+    font-size: 13px;
+    color: #a3aed0;
+}
+
+.schedule-table td {
+    padding: 14px;
+    border-bottom: 1px solid #f4f7fe;
+    color: #2b3674;
+}
+
+.badge {
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.badge.FN {
+    background: #e2f9ef;
+    color: #05cd99;
+}
+
+.badge.AN {
+    background: #fff5e6;
+    color: #ffb547;
+}
+
+.branch-col {
+    font-weight: bold;
+    color: #4318ff;
+}
+
+.action-cell {
+    display: flex;
+    gap: 15px;
+}
+
+.icon-edit {
+    color: #4318ff;
+    cursor: pointer;
+}
+
+.icon-delete {
+    color: #ee5d50;
+    cursor: pointer;
+}
+
+.no-data {
+    text-align: center;
+    padding: 20px;
+    color: #a3aed0;
+}
