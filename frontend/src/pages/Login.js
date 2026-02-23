@@ -4,7 +4,6 @@ import "./Login.css";
 
 function Login() {
   const navigate = useNavigate();
-
   const [role, setRole] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -12,28 +11,29 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    const res = await fetch("http://localhost:5000/api/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        username,
-        password,
-        role
-      })
-    });
+    try {
+      const res = await fetch("http://localhost:5000/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, role })
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-  if (res.ok) {
-  // Use the specific component-based paths
-  if (data.role === "admin") navigate("/ExamStatusBoard");
-  if (data.role === "teacher") navigate("/MyDutySchedule");
-  if (data.role === "student") navigate("/ExamHall");
-} else {
-  alert(data.message);
-}
+      if (res.ok && data.success) {
+        // Convert role to lowercase to match navigate logic exactly
+        const userRole = data.role.toLowerCase();
+
+        if (userRole === "admin") navigate("/ExamStatusBoard");
+        else if (userRole === "teacher") navigate("/MyDutySchedule");
+        else if (userRole === "student") navigate("/ExamHall");
+      } else {
+        alert(data.message || "Invalid Login");
+      }
+    } catch (error) {
+      console.error("Login Error:", error);
+      alert("Server is not responding.");
+    }
   };
 
   return (
@@ -54,9 +54,9 @@ function Login() {
               required
             >
               <option value="">Select Role</option>
-              <option value="admin">Admin</option>
-              <option value="teacher">Teacher</option>
-              <option value="student">Student</option>
+              <option value="Admin">Admin</option>
+              <option value="Teacher">Teacher</option>
+              <option value="Student">Student</option>
             </select>
           </div>
 
@@ -65,7 +65,7 @@ function Login() {
             <input
               type="text"
               className="form-control"
-              placeholder="admin@sjcetpalai.ac.in"
+              placeholder="user@sjcetpalai.ac.in"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -84,9 +84,7 @@ function Login() {
             />
           </div>
 
-          <button type="submit" className="login-btn">
-            Login
-          </button>
+          <button type="submit" className="login-btn">Login</button>
         </form>
       </div>
     </div>

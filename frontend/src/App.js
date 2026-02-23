@@ -5,7 +5,7 @@ import ExamSchedule from "./pages/Admin/ExamSchedule";
 import ExamStatus from "./pages/Admin/ExamStatusBoard";
 import ManageRooms from "./pages/Admin/ManageRooms";
 import ManageTeachers from "./pages/Admin/ManageTeachers";
-import ManageStudents from "./pages/Admin/ManageStudents"; // <--- ADD THIS IMPORT
+import ManageStudents from "./pages/Admin/ManageStudents";
 import MyDutySchedule from "./pages/Teacher/MyDutySchedule";
 import ExamHall from "./pages/Student/ExamHall";
 // import BackButton from "./components/BackButton";
@@ -19,16 +19,16 @@ const Placeholder = ({ title }) => (
   </div>
 );
 
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Login />} />
+        
+        {/* Admin Routes */}
         <Route path="/ExamStatusBoard" element={<ExamStatus />} />
-        
-        {/* REPLACED Placeholder WITH REAL COMPONENT */}
         <Route path="/ManageStudents" element={<ManageStudents />} />
-        
         <Route path="/ManageTeachers" element={<ManageTeachers />} />
         <Route path="/ManageRooms" element={<ManageRooms />} />
         <Route path="/ExamSchedule" element={<ExamSchedule />} />
@@ -36,7 +36,10 @@ function App() {
         <Route path="/GenerateDuties" element={<Placeholder title="Generate Duties" />} />
         <Route path="/Reports" element={<Placeholder title="Reports" />} />
         
+        {/* Teacher Routes */}
         <Route path="/MyDutySchedule" element={<MyDutySchedule />} />
+        
+        {/* Student Routes */}
         <Route path="/ExamHall" element={<ExamHall />} />
       </Routes>
     </BrowserRouter>
