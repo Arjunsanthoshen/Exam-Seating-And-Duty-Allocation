@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminSidebar from './AdminSidebar'; 
-import { FaEdit } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaPlus, FaMinus } from 'react-icons/fa';
 import './ManageRooms.css';
 
 const ManageRooms = () => {
@@ -10,13 +10,52 @@ const ManageRooms = () => {
         block: '', room_no: '', capacity: 30, cap_per_bench: 1,
         col1: 0, col2: 0, col3: 0, col4: 0, col5: 0
     });
-
+    const [blocks, setBlocks] = useState([]);
+    const [newBlockName, setNewBlockName] = useState("");
     const benchOptions = ["Nil", 5, 6, 7, 8, 9, 10];
-    const blockOptions = ["MTB", "SJB", "SJPB", "SPB", "SFB"];
+    // const blockOptions = ["MTB", "SJB", "SJPB", "SPB", "SFB"];
 
     useEffect(() => {
         fetchRooms();
+        fetchBlocks();
     }, []);
+
+    const fetchBlocks = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/blocks');
+            setBlocks(res.data);
+        } catch (err) {
+            console.error("Error fetching blocks", err);
+        }
+    };
+
+    const blockOptions = blocks.map(b => b.block_name);
+
+    const handleAddBlock = async () => {
+        if (!newBlockName.trim()) return alert("Enter a block name");
+        try {
+            await axios.post('http://localhost:5000/api/blocks', { block_name: newBlockName.toUpperCase() });
+            setNewBlockName("");
+            fetchBlocks();
+            alert("Block added!");
+        } catch (err) {
+            alert(err.response?.data?.message || "Error adding block");
+        }
+    };
+
+    const handleDeleteBlock = async () => {
+        if (!newBlockName.trim()) return alert("Enter block name to delete");
+        if (window.confirm(`Delete block ${newBlockName}?`)) {
+            try {
+                await axios.delete(`http://localhost:5000/api/blocks/${newBlockName.toUpperCase()}`);
+                setNewBlockName("");
+                fetchBlocks();
+                alert("Block removed!");
+            } catch (err) {
+                alert("Error deleting block. Ensure it's not in use.");
+            }
+        }
+    };
 
     const fetchRooms = async () => {
         try {
@@ -47,6 +86,20 @@ const ManageRooms = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    const handleDelete = async (block, room_no) => {
+        if (window.confirm(`Are you sure you want to delete room ${room_no} in block ${block}?`)) {
+            try {
+                // Updated to pass both block and room_no in the URL
+                await axios.delete(`http://localhost:5000/api/rooms/${block}/${room_no}`);
+                alert("Room deleted successfully");
+                fetchRooms(); // Refresh the table
+            } catch (err) {
+                console.error("Delete Error:", err);
+                alert("Failed to delete room");
+            }
+        }
+    };
+
     return (
         <div className="dashboard-container">
             <AdminSidebar />
@@ -54,7 +107,24 @@ const ManageRooms = () => {
             <main className="main-content">
                 <div className="manage-card">
                     <h2 className="card-title">Manage Rooms</h2>
-                    
+                    <div className="block-management-section">
+                        <h4 className="sub-title">Block Management</h4>
+                        <div className="block-controls">
+                            <input 
+                                type="text" 
+                                className="main-input block-input"
+                                placeholder="Enter block name (e.g. MTB)" 
+                                value={newBlockName} 
+                                onChange={(e) => setNewBlockName(e.target.value)} 
+                            />
+                            <button className="icon-btn add-btn" onClick={handleAddBlock} title="Add Block">
+                                <FaPlus />
+                            </button>
+                            <button className="icon-btn remove-btn" onClick={handleDeleteBlock} title="Delete Block">
+                                <FaMinus />
+                            </button>
+                        </div>
+                    </div>
                     <div className="form-section">
                         <div className="input-grid">
                             <div className="input-box">
@@ -145,7 +215,7 @@ const ManageRooms = () => {
                                     <th>C3</th>
                                     <th>C4</th>
                                     <th>C5</th>
-                                    <th>Edit</th>
+                                    <th>Actions</th> {/* Renamed from Edit */}
                                 </tr>
                             </thead>
                             <tbody>
@@ -160,8 +230,17 @@ const ManageRooms = () => {
                                         <td>{room.col3 || '0'}</td>
                                         <td>{room.col4 || '0'}</td>
                                         <td>{room.col5 || '0'}</td>
-                                        <td>
-                                            <FaEdit className="edit-btn" onClick={() => handleEdit(room)} />
+                                        <td className="action-cell">
+                                            <FaEdit 
+                                                className="edit-btn" 
+                                                onClick={() => handleEdit(room)} 
+                                                title="Edit"
+                                            />
+                                            <FaTrash 
+                                                className="delete-btn" 
+                                                onClick={() => handleDelete(room.block, room.room_no)} 
+                                                title="Delete"
+                                            />
                                         </td>
                                     </tr>
                                 ))}
