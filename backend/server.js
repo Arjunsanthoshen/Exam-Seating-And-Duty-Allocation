@@ -351,6 +351,312 @@ app.post("/api/login", (req, res) => {
     });
 });
 
+
+
+// ----------------------------------------------------------------------------
+//                        SEATING ALLOCATION ROUTES
+// ----------------------------------------------------------------------------
+
+// GET: Fetch required data for the Allocation page
+app.get('/api/allocation/init', async (req, res) => {
+    try {
+        // Fetch rooms for the toggle list
+        const [rooms] = await db.promise().query('SELECT block, room_no, capacity FROM Rooms ORDER BY block, room_no');
+        
+        // Fetch student counts grouped by join year
+        // We calculate academic year based on current year
+        const currentYear = new Date().getFullYear();
+        const [students] = await db.promise().query(`
+            SELECT 
+                (${currentYear} - year_of_join + 1) AS academic_year,
+                SUM(end_serial) as total_students
+            FROM Student_manage 
+            GROUP BY year_of_join
+        `);
+        
+        const formattedStudents = students.map(s => ({
+            academic_year: Number(s.academic_year),
+            total_students: Number(s.total_students)
+        }));
+
+        res.json({ rooms, students: formattedStudents });
+    } catch (err) {
+        console.error("Allocation Init Error:", err);
+        res.status(500).json({ error: "Database fetch failed" });
+    }
+});
+
+
+// POST: Generate Allocation
+app.post('/api/allocation/generate', async (req, res) => {
+    const { examDate, session, selectedYears, selectedRooms } = req.body;
+
+    if (!examDate || !session || !selectedYears?.length || !selectedRooms?.length) {
+        return res.status(400).json({ message: "Missing required fields." });
+    }
+
+    const connection = await db.promise().getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        // 1️⃣ Fetch Exam
+        const [examRows] = await connection.query(
+            `SELECT exam_id FROM Exam_schedule
+             WHERE exam_date = ? AND session = ?`,
+            [examDate, session]
+        );
+
+        if (!examRows.length) {
+            await connection.rollback();
+            return res.status(400).json({ message: "No exam found." });
+        }
+
+        const exam_id = examRows[0].exam_id;
+
+        // 2️⃣ Fetch Selected Rooms (sorted)
+        const [rooms] = await connection.query(
+            `SELECT * FROM Rooms
+             WHERE CONCAT(block, room_no) IN (?)
+             ORDER BY block ASC, room_no ASC`,
+            [selectedRooms]
+        );
+
+        if (!rooms.length) {
+            await connection.rollback();
+            return res.status(400).json({ message: "Rooms not found." });
+        }
+
+        // 3️⃣ Convert academic year → join year
+        const currentYear = new Date().getFullYear();
+        const joinYears = selectedYears.map(y =>
+            currentYear - Number(y) + 1
+        );
+
+        // 4️⃣ Fetch Students
+        const [studentRows] = await connection.query(
+            `SELECT year_of_join, branch, batch, end_serial
+             FROM Student_manage
+             WHERE year_of_join IN (?)
+             ORDER BY year_of_join ASC, branch ASC, batch ASC`,
+            [joinYears]
+        );
+
+        if (!studentRows.length) {
+            await connection.rollback();
+            return res.status(400).json({ message: "No students found." });
+        }
+
+        // 5️⃣ Build Year Queues
+        const yearQueues = {};
+        studentRows.forEach(row => {
+            if (!yearQueues[row.year_of_join])
+                yearQueues[row.year_of_join] = [];
+
+            for (let i = 1; i <= row.end_serial; i++) {
+                yearQueues[row.year_of_join].push({
+                    username: `${row.year_of_join}_${row.branch}_${row.batch}_${i}`,
+                    branch: row.branch,
+                    batch: row.batch,
+                    roll_no: i,
+                    year: row.year_of_join
+                });
+            }
+        });
+
+        const yearList = Object.keys(yearQueues).sort();
+
+        await connection.query(
+            `DELETE FROM Seating_allocation WHERE exam_id = ?`,
+            [exam_id]
+        );
+
+        let seating_id = 1;
+        let globalYearPointer = 0;
+
+        // =========================
+        // STRICT GLOBAL ALLOCATION
+        // =========================
+        for (let room of rooms) {
+
+            const columns = [room.col1, room.col2, room.col3, room.col4, room.col5]
+                .filter(c => c > 0);
+
+            const benchesPerColumn =
+                Math.floor(room.capacity / (columns.length * room.cap_per_bench));
+
+            for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+
+                let assignedYear = null;
+                let attempts = 0;
+
+                // strict rotation
+                while (attempts < yearList.length) {
+
+                    const yearKey = yearList[globalYearPointer % yearList.length];
+
+                    globalYearPointer++;
+
+                    if (yearQueues[yearKey]?.length) {
+                        assignedYear = yearKey;
+                        break;
+                    }
+
+                    attempts++;
+                }
+
+                if (!assignedYear) break;
+
+                for (let bench = 1; bench <= benchesPerColumn; bench++) {
+
+                    // LEFT
+                    if (yearQueues[assignedYear]?.length) {
+
+                        const student = yearQueues[assignedYear].shift();
+
+                        await connection.query(
+                            `INSERT INTO Seating_allocation
+                            (seating_id, exam_id, room_no, block,
+                             column_no, bench_no, seat_position,
+                             username, batch, roll_no, branch, session)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            [
+                                seating_id++,
+                                exam_id,
+                                room.room_no,
+                                room.block,
+                                colIndex + 1,
+                                bench,
+                                "left",
+                                student.username,
+                                student.batch,
+                                student.roll_no,
+                                student.branch,
+                                session
+                            ]
+                        );
+                    }
+
+                    // RIGHT (if 2 per bench)
+                    if (room.cap_per_bench === 2) {
+
+                        let rightYear = null;
+                        let rightAttempts = 0;
+
+                        while (rightAttempts < yearList.length) {
+
+                            const yearKey = yearList[globalYearPointer % yearList.length];
+                            globalYearPointer++;
+
+                            if (yearQueues[yearKey]?.length && yearKey !== assignedYear) {
+                                rightYear = yearKey;
+                                break;
+                            }
+
+                            rightAttempts++;
+                        }
+
+                        if (rightYear && yearQueues[rightYear]?.length) {
+
+                            const student = yearQueues[rightYear].shift();
+
+                            await connection.query(
+                                `INSERT INTO Seating_allocation
+                                (seating_id, exam_id, room_no, block,
+                                 column_no, bench_no, seat_position,
+                                 username, batch, roll_no, branch, session)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                [
+                                    seating_id++,
+                                    exam_id,
+                                    room.room_no,
+                                    room.block,
+                                    colIndex + 1,
+                                    bench,
+                                    "right",
+                                    student.username,
+                                    student.batch,
+                                    student.roll_no,
+                                    student.branch,
+                                    session
+                                ]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        await connection.commit();
+
+        res.json({
+            message: "Allocation generated successfully"
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error(error);
+        res.status(500).json({
+            message: "Allocation failed: " + error.message
+        });
+    } finally {
+        connection.release();
+    }
+});
+// ----------------------------------------------------------------------------
+//                        SAVE & FETCH SELECTION ROUTES
+// ----------------------------------------------------------------------------
+
+// POST: Save current selection
+app.post('/api/allocation/save', (req, res) => {
+    const { examDate, session, selectedYears, selectedRooms } = req.body;
+
+    // Convert arrays to strings for MySQL storage
+    const yearsStr = JSON.stringify(selectedYears);
+    const roomsStr = JSON.stringify(selectedRooms);
+
+    // We use ID 1 to maintain a single 'Last Saved' state
+    const query = `
+        INSERT INTO Allocation_History (id, exam_date, session, selected_years, selected_rooms)
+        VALUES (1, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE 
+            exam_date = VALUES(exam_date), 
+            session = VALUES(session), 
+            selected_years = VALUES(selected_years), 
+            selected_rooms = VALUES(selected_rooms)
+    `;
+
+    db.query(query, [examDate, session, yearsStr, roomsStr], (err, result) => {
+        if (err) {
+            console.error("Save Selection Error:", err);
+            return res.status(500).json({ error: "Failed to save selection" });
+        }
+        res.json({ message: "Selection saved successfully" });
+    });
+});
+
+// GET: Fetch saved selection (Update your existing init route or add this)
+app.get('/api/allocation/saved-state', (req, res) => {
+    db.query('SELECT * FROM Allocation_History WHERE id = 1', (err, results) => {
+        if (err) return res.status(500).json(err);
+        if (results.length > 0) {
+            const data = results[0];
+            // Convert strings back to arrays/objects
+            res.json({
+                examDate: data.exam_date,
+                session: data.session,
+                selectedYears: JSON.parse(data.selected_years),
+                selectedRooms: JSON.parse(data.selected_rooms)
+            });
+        } else {
+            res.json(null);
+        }
+    });
+});
+
+
+
+
 /* -------------------------------------------------------------------------- */
 /*                                SERVER START                                */
 /* -------------------------------------------------------------------------- */
