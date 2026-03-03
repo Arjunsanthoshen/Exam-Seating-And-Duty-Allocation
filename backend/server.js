@@ -391,7 +391,7 @@ app.get('/api/allocation/init', async (req, res) => {
 
 
 // POST: Generate Allocation
-aapp.post('/api/allocation/generate', async (req, res) => {
+app.post('/api/allocation/generate', async (req, res) => {
     const { examDate, session, selectedYears, selectedRooms } = req.body;
 
     if (!examDate || !session || !selectedYears?.length || !selectedRooms?.length) {
