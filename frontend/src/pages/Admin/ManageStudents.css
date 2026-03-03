@@ -13,7 +13,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: center; /* Centers the card horizontally */
 }
 
 /* 2. The White Card */
@@ -24,7 +24,7 @@
   padding: 45px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
   width: 95%;
-  max-width: 1200px;
+  max-width: 1300px;
   margin-top: 10px;
   box-sizing: border-box;
 }
@@ -43,14 +43,14 @@
   background-color: #ffffff;
   padding: 30px;
   border-radius: 15px;
-  border: 1px solid #cbd5e0;
+  border: 2px solid #cbd5e0; /* Crisper border */
   margin-bottom: 40px;
 }
 
 .input-grid {
   display: flex;
-  gap: 30px;
-  align-items: flex-end;
+  gap: 25px;
+  align-items: flex-end; /* Aligns buttons with inputs */
 }
 
 .input-box { 
@@ -66,7 +66,7 @@
   font-size: 0.95rem; 
 }
 
-/* 4. Year Stepper Styling */
+/* 4. Custom Component: Year Stepper */
 .year-stepper {
   display: flex;
   align-items: center;
@@ -87,7 +87,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
 }
 
 .step-btn:hover:not(:disabled) {
@@ -112,7 +111,41 @@
   outline: none;
 }
 
-/* 5. Inputs */
+/* 5. Custom Component: Batch Selector (A, B, C) */
+.batch-selector {
+  display: flex;
+  gap: 8px;
+  background: #f1f5f9;
+  padding: 5px;
+  border-radius: 12px;
+  border: 2px solid #cbd5e0;
+  height: 50px;
+  box-sizing: border-box;
+}
+
+.batch-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.batch-btn.active {
+  background: #5b87c4;
+  color: white;
+  box-shadow: 0 2px 6px rgba(91, 135, 196, 0.3);
+}
+
+.batch-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* 6. General Inputs */
 .main-input {
   padding: 0 15px;
   font-size: 1rem;
@@ -131,13 +164,13 @@
   box-shadow: 0 0 0 4px rgba(123, 166, 220, 0.15);
 }
 
+/* 7. Action Buttons */
 .button-group {
   flex: 0 0 auto;
-  flex-direction: row !important;
+  display: flex;
   gap: 12px;
 }
 
-/* 6. Action Buttons */
 .submit-batch-btn {
   height: 50px;
   padding: 0 35px;
@@ -168,7 +201,7 @@
   cursor: pointer;
 }
 
-/* 7. Table Design - Fixed Alignment */
+/* 8. Table Design - Centered Alignment */
 .table-section {
   border: 1px solid #cbd5e0;
   border-radius: 15px;
@@ -183,7 +216,7 @@
 
 .student-table th { 
   background: #f1f5f9; 
-  text-align: center; /* Changed from left to center */
+  text-align: center; /* Centered headings */
   padding: 22px; 
   color: #3d5d8a; 
   font-weight: 700;
@@ -195,22 +228,27 @@
 
 .student-table td { 
   padding: 18px; 
-  text-align: center; /* Ensures data is centered under headings */
+  text-align: center; /* Centered values */
   border-bottom: 1px solid #e2e8f0; 
   color: #2d3748;
+}
+
+.batch-td {
+  font-weight: 800;
+  color: #5b87c4; /* Highlights the Batch letter */
 }
 
 .student-table tr:hover {
   background-color: #f8fafc;
 }
 
-/* Increased spacing for Table Icons */
+/* Actions Column */
 .action-cell { 
   display: flex; 
   gap: 45px; 
   align-items: center;
-  justify-content: center; /* Keeps icons centered in the column */
-  min-height: 50px; /* Ensures consistent row height */
+  justify-content: center;
+  min-height: 50px;
 }
 
 .edit-btn { 

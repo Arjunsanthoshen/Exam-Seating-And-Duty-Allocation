@@ -14,6 +14,10 @@ app.use(express.json());
 /* -------------------------------------------------------------------------- */
 /*                            DATABASE CONNECTION                             */
 /* -------------------------------------------------------------------------- */
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
 const db = mysql.createPool({
     host: "localhost",
     user: "root",
@@ -33,29 +37,36 @@ db.getConnection((err, connection) => {
         connection.release(); // VERY IMPORTANT
     }
 });
-
 /* -------------------------------------------------------------------------- */
 /*                        STUDENT MANAGEMENT ROUTES                           */
 /* -------------------------------------------------------------------------- */
-
 app.get('/api/students', (req, res) => {
 
     const query = `
+<<<<<<< HEAD
         SELECT year_of_join, branch, batch, end_serial
+=======
+        SELECT year_of_join, branch, batch, end_serial 
+>>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
         FROM Student_manage 
-        ORDER BY year_of_join DESC, branch ASC
+        ORDER BY year_of_join DESC, branch ASC, batch ASC
     `;
 
     db.query(query, (err, results) => {
+<<<<<<< HEAD
 
         if (err) return res.status(500).json(err);
 
+=======
+        if (err) return res.status(500).json({ error: err.message });
+>>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
         res.json(results);
 
     });
 
 });
 
+<<<<<<< HEAD
 
 app.post('/api/students/add', (req, res) => {
 
@@ -101,17 +112,40 @@ app.post('/api/students/add', (req, res) => {
 
             });
 
+=======
+// POST: Add new
+app.post('/api/students/add', (req, res) => {
+    const { year, branch, batch, strength } = req.body;
+
+    const insertQuery = `
+        INSERT INTO Student_manage 
+        (year_of_join, branch, batch, end_serial) 
+        VALUES (?, ?, ?, ?)
+    `;
+
+    db.query(insertQuery, [year, branch, batch, strength], (err) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ message: "Duplicate entry or database error" });
+        }
+        res.status(200).json({ message: 'Saved successfully' });
+>>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
     });
 
 });
 
+<<<<<<< HEAD
 
+=======
+// PUT: Update
+>>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
 app.put('/api/students/update', (req, res) => {
 
     const { year, branch, strength } = req.body;
 
 
     const query = `
+<<<<<<< HEAD
         UPDATE Student_manage
         SET end_serial=?
         WHERE year_of_join=? AND branch=? AND batch='A'
@@ -144,6 +178,33 @@ app.delete('/api/students/:year/:branch', (req, res) => {
         WHERE year_of_join=? AND branch=? AND batch='A'
     `;
 
+=======
+        UPDATE Student_manage 
+        SET end_serial = ? 
+        WHERE year_of_join = ? AND branch = ?
+    `;
+
+    db.query(query, [strength, year, branch], (err) => {
+        if (err) return res.status(500).json(err);
+        res.json({ message: "Updated successfully" });
+    });
+});
+
+// DELETE: Remove
+app.delete('/api/students/:year/:branch/:batch', (req, res) => {
+    const { year, branch, batch } = req.params;
+
+    db.query(
+        `DELETE FROM Student_manage 
+         WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+        [year, branch, batch],
+        (err) => {
+            if (err) return res.status(500).json(err);
+            res.json({ message: "Deleted successfully" });
+        }
+    );
+});
+>>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
 
     db.query(query,
         [year, branch],
