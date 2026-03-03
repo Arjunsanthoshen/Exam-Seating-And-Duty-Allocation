@@ -15,93 +15,89 @@ app.use(express.json());
 /*                            DATABASE CONNECTION                             */
 /* -------------------------------------------------------------------------- */
 
-const db = mysql.createConnection({
+const db = mysql.createPool({
     host: "localhost",
     user: "root",
     password: "tree",
-    database: "college"
+    database: "college",
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-db.connect((err) => {
+// Test connection
+db.getConnection((err, connection) => {
     if (err) {
         console.error("Database connection failed:", err);
     } else {
-        console.log("Connected to mysql successfully!");
+        console.log("Connected to MySQL successfully!");
+        connection.release(); // VERY IMPORTANT
     }
 });
-
 /* -------------------------------------------------------------------------- */
 /*                        STUDENT MANAGEMENT ROUTES                           */
 /* -------------------------------------------------------------------------- */
-
 app.get('/api/students', (req, res) => {
     const query = `
-        SELECT year_of_join, branch, Branch_Strength 
+        SELECT year_of_join, branch, batch, end_serial 
         FROM Student_manage 
-        ORDER BY year_of_join DESC, branch ASC
+        ORDER BY year_of_join DESC, branch ASC, batch ASC
     `;
 
     db.query(query, (err, results) => {
-        if (err) return res.status(500).json({ error: "Database fetch failed" });
+        if (err) return res.status(500).json({ error: err.message });
         res.json(results);
     });
 });
 
+// POST: Add new
 app.post('/api/students/add', (req, res) => {
-    const { year, branch, strength } = req.body;
+    const { year, branch, batch, strength } = req.body;
 
-    const checkQuery = `
-        SELECT * FROM Student_manage 
-        WHERE year_of_join = ? AND branch = ?
+    const insertQuery = `
+        INSERT INTO Student_manage 
+        (year_of_join, branch, batch, end_serial) 
+        VALUES (?, ?, ?, ?)
     `;
 
-    db.query(checkQuery, [year, branch], (err, results) => {
-        if (err) return res.status(500).json(err);
-
-        if (results.length > 0) {
-            return res.status(409).json({ message: `Record for ${branch} ${year} already exists!` });
+    db.query(insertQuery, [year, branch, batch, strength], (err) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ message: "Duplicate entry or database error" });
         }
-
-        const insertQuery = `
-            INSERT INTO Student_manage 
-            (year_of_join, branch, Branch_Strength, stid)
-            VALUES (?, ?, ?, 1)
-        `;
-
-        db.query(insertQuery, [year, branch, strength], (err) => {
-            if (err) return res.status(500).json(err);
-            res.status(200).json({ message: "Record saved successfully" });
-        });
+        res.status(200).json({ message: 'Saved successfully' });
     });
 });
 
+// PUT: Update
 app.put('/api/students/update', (req, res) => {
     const { year, branch, strength } = req.body;
 
     const query = `
         UPDATE Student_manage 
-        SET Branch_Strength = ? 
+        SET end_serial = ? 
         WHERE year_of_join = ? AND branch = ?
     `;
 
     db.query(query, [strength, year, branch], (err) => {
         if (err) return res.status(500).json(err);
-        res.json({ message: "Record updated successfully" });
+        res.json({ message: "Updated successfully" });
     });
 });
 
-app.delete('/api/students/:year/:branch', (req, res) => {
-    const { year, branch } = req.params;
+// DELETE: Remove
+app.delete('/api/students/:year/:branch/:batch', (req, res) => {
+    const { year, branch, batch } = req.params;
 
-    const query = `
-        DELETE FROM Student_manage 
-        WHERE year_of_join = ? AND branch = ?
-    `;
-
-    db.query(query, [year, branch], (err) => {
-        if (err) return res.status(500).json(err);
-        res.json({ message: "Record deleted successfully" });
-    });
+    db.query(
+        `DELETE FROM Student_manage 
+         WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+        [year, branch, batch],
+        (err) => {
+            if (err) return res.status(500).json(err);
+            res.json({ message: "Deleted successfully" });
+        }
+    );
 });
 
 /* -------------------------------------------------------------------------- */
