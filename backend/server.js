@@ -33,80 +33,71 @@ db.getConnection((err, connection) => {
         console.log("Connected to MySQL successfully!");
         connection.release(); // VERY IMPORTANT
     }
-})
-
+});
 /* -------------------------------------------------------------------------- */
 /* STUDENT MANAGEMENT ROUTES                           */
 /* -------------------------------------------------------------------------- */
-
 app.get('/api/students', (req, res) => {
     const query = `
-        SELECT year_of_join, branch, Branch_Strength 
+        SELECT year_of_join, branch, batch, end_serial 
         FROM Student_manage 
-        ORDER BY year_of_join DESC, branch ASC
+        ORDER BY year_of_join DESC, branch ASC, batch ASC
     `;
 
     db.query(query, (err, results) => {
-        if (err) return res.status(500).json({ error: "Database fetch failed" });
+        if (err) return res.status(500).json({ error: err.message });
         res.json(results);
     });
 });
 
+// POST: Add new
 app.post('/api/students/add', (req, res) => {
-    const { year, branch, strength } = req.body;
+    const { year, branch, batch, strength } = req.body;
 
-    const checkQuery = `
-        SELECT * FROM Student_manage 
-        WHERE year_of_join = ? AND branch = ?
+    const insertQuery = `
+        INSERT INTO Student_manage 
+        (year_of_join, branch, batch, end_serial) 
+        VALUES (?, ?, ?, ?)
     `;
 
-    db.query(checkQuery, [year, branch], (err, results) => {
-        if (err) return res.status(500).json(err);
-
-        if (results.length > 0) {
-            return res.status(409).json({ message: `Record for ${branch} ${year} already exists!` });
+    db.query(insertQuery, [year, branch, batch, strength], (err) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ message: "Duplicate entry or database error" });
         }
-
-        const insertQuery = `
-            INSERT INTO Student_manage 
-            (year_of_join, branch, Branch_Strength, stid)
-            VALUES (?, ?, ?, 1)
-        `;
-
-        db.query(insertQuery, [year, branch, strength], (err) => {
-            if (err) return res.status(500).json(err);
-            res.status(200).json({ message: "Record saved successfully" });
-        });
+        res.status(200).json({ message: 'Saved successfully' });
     });
 });
 
+// PUT: Update
 app.put('/api/students/update', (req, res) => {
     const { year, branch, strength } = req.body;
 
     const query = `
         UPDATE Student_manage 
-        SET Branch_Strength = ? 
+        SET end_serial = ? 
         WHERE year_of_join = ? AND branch = ?
     `;
 
     db.query(query, [strength, year, branch], (err) => {
         if (err) return res.status(500).json(err);
-        res.json({ message: "Record updated successfully" });
+        res.json({ message: "Updated successfully" });
     });
 });
 
-app.delete('/api/students/:year/:branch', (req, res) => {
-    const { year, branch } = req.params;
+// DELETE: Remove
+app.delete('/api/students/:year/:branch/:batch', (req, res) => {
+    const { year, branch, batch } = req.params;
 
-    const query = `
-        DELETE FROM Student_manage 
-        WHERE year_of_join = ? AND branch = ?
-    `;
-
-    db.query(query, [year, branch], (err) => {
-        if (err) return res.status(500).json(err);
-        res.json({ message: "Record deleted successfully" });
-    });
+    db.query(
+        `DELETE FROM Student_manage 
+         WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+        [year, branch, batch],
+        (err) => {
+            if (err) return res.status(500).json(err);
+            res.json({ message: "Deleted successfully" });
+        }
+    );
 });
 
 /* -------------------------------------------------------------------------- */
@@ -400,7 +391,7 @@ app.get('/api/allocation/init', async (req, res) => {
 
 
 // POST: Generate Allocation
-app.post('/api/allocation/generate', async (req, res) => {
+aapp.post('/api/allocation/generate', async (req, res) => {
     const { examDate, session, selectedYears, selectedRooms } = req.body;
 
     if (!examDate || !session || !selectedYears?.length || !selectedRooms?.length) {
@@ -414,7 +405,7 @@ app.post('/api/allocation/generate', async (req, res) => {
 
         // 1️⃣ Fetch Exam
         const [examRows] = await connection.query(
-            `SELECT exam_id FROM exam_schedule
+            `SELECT exam_id FROM Exam_schedule
              WHERE exam_date = ? AND session = ?`,
             [examDate, session]
         );
@@ -426,7 +417,7 @@ app.post('/api/allocation/generate', async (req, res) => {
 
         const exam_id = examRows[0].exam_id;
 
-        // 2️⃣ Fetch Selected Rooms
+        // 2️⃣ Fetch Selected Rooms (sorted)
         const [rooms] = await connection.query(
             `SELECT * FROM Rooms
              WHERE CONCAT(block, room_no) IN (?)
@@ -434,15 +425,183 @@ app.post('/api/allocation/generate', async (req, res) => {
             [selectedRooms]
         );
 
-        // ... [Allocation Logic remains the same] ...
+        if (!rooms.length) {
+            await connection.rollback();
+            return res.status(400).json({ message: "Rooms not found." });
+        }
+
+        // 3️⃣ Convert academic year → join year
+        const currentYear = new Date().getFullYear();
+        const joinYears = selectedYears.map(y =>
+            currentYear - Number(y) + 1
+        );
+
+        // 4️⃣ Fetch Students
+        const [studentRows] = await connection.query(
+            `SELECT year_of_join, branch, batch, end_serial
+             FROM Student_manage
+             WHERE year_of_join IN (?)
+             ORDER BY year_of_join ASC, branch ASC, batch ASC`,
+            [joinYears]
+        );
+
+        if (!studentRows.length) {
+            await connection.rollback();
+            return res.status(400).json({ message: "No students found." });
+        }
+
+        // 5️⃣ Build Year Queues
+        const yearQueues = {};
+        studentRows.forEach(row => {
+            if (!yearQueues[row.year_of_join])
+                yearQueues[row.year_of_join] = [];
+
+            for (let i = 1; i <= row.end_serial; i++) {
+                yearQueues[row.year_of_join].push({
+                    username: `${row.year_of_join}_${row.branch}_${row.batch}_${i}`,
+                    branch: row.branch,
+                    batch: row.batch,
+                    roll_no: i,
+                    year: row.year_of_join
+                });
+            }
+        });
+
+        const yearList = Object.keys(yearQueues).sort();
+
+        await connection.query(
+            `DELETE FROM Seating_allocation WHERE exam_id = ?`,
+            [exam_id]
+        );
+
+        let seating_id = 1;
+        let globalYearPointer = 0;
+
+        // =========================
+        // STRICT GLOBAL ALLOCATION
+        // =========================
+        for (let room of rooms) {
+
+            const columns = [room.col1, room.col2, room.col3, room.col4, room.col5]
+                .filter(c => c > 0);
+
+            const benchesPerColumn =
+                Math.floor(room.capacity / (columns.length * room.cap_per_bench));
+
+            for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+
+                let assignedYear = null;
+                let attempts = 0;
+
+                // strict rotation
+                while (attempts < yearList.length) {
+
+                    const yearKey = yearList[globalYearPointer % yearList.length];
+
+                    globalYearPointer++;
+
+                    if (yearQueues[yearKey]?.length) {
+                        assignedYear = yearKey;
+                        break;
+                    }
+
+                    attempts++;
+                }
+
+                if (!assignedYear) break;
+
+                for (let bench = 1; bench <= benchesPerColumn; bench++) {
+
+                    // LEFT
+                    if (yearQueues[assignedYear]?.length) {
+
+                        const student = yearQueues[assignedYear].shift();
+
+                        await connection.query(
+                            `INSERT INTO Seating_allocation
+                            (seating_id, exam_id, room_no, block,
+                             column_no, bench_no, seat_position,
+                             username, batch, roll_no, branch, session)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            [
+                                seating_id++,
+                                exam_id,
+                                room.room_no,
+                                room.block,
+                                colIndex + 1,
+                                bench,
+                                "left",
+                                student.username,
+                                student.batch,
+                                student.roll_no,
+                                student.branch,
+                                session
+                            ]
+                        );
+                    }
+
+                    // RIGHT (if 2 per bench)
+                    if (room.cap_per_bench === 2) {
+
+                        let rightYear = null;
+                        let rightAttempts = 0;
+
+                        while (rightAttempts < yearList.length) {
+
+                            const yearKey = yearList[globalYearPointer % yearList.length];
+                            globalYearPointer++;
+
+                            if (yearQueues[yearKey]?.length && yearKey !== assignedYear) {
+                                rightYear = yearKey;
+                                break;
+                            }
+
+                            rightAttempts++;
+                        }
+
+                        if (rightYear && yearQueues[rightYear]?.length) {
+
+                            const student = yearQueues[rightYear].shift();
+
+                            await connection.query(
+                                `INSERT INTO Seating_allocation
+                                (seating_id, exam_id, room_no, block,
+                                 column_no, bench_no, seat_position,
+                                 username, batch, roll_no, branch, session)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                [
+                                    seating_id++,
+                                    exam_id,
+                                    room.room_no,
+                                    room.block,
+                                    colIndex + 1,
+                                    bench,
+                                    "right",
+                                    student.username,
+                                    student.batch,
+                                    student.roll_no,
+                                    student.branch,
+                                    session
+                                ]
+                            );
+                        }
+                    }
+                }
+            }
+        }
 
         await connection.commit();
-        res.json({ message: "Allocation generated successfully" });
+
+        res.json({
+            message: "Allocation generated successfully"
+        });
 
     } catch (error) {
         await connection.rollback();
         console.error(error);
-        res.status(500).json({ message: "Allocation failed: " + error.message });
+        res.status(500).json({
+            message: "Allocation failed: " + error.message
+        });
     } finally {
         connection.release();
     }

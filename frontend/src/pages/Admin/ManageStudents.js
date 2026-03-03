@@ -7,11 +7,13 @@ import "./ManageStudents.css";
 const ManageStudents = () => {
   const [year, setYear] = useState(2026);
   const [branch, setBranch] = useState("CS");
-  const [batchStrength, setBatchStrength] = useState(""); 
+  const [batch, setBatch] = useState("A");
+  const [batchStrength, setBatchStrength] = useState("");
   const [studentList, setStudentList] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
 
   const branchOrder = ["CS", "CE", "EC", "EE", "ME", "AI"];
+  const batchOptions = ["A", "B", "C"];
 
   useEffect(() => {
     fetchStudents();
@@ -20,7 +22,9 @@ const ManageStudents = () => {
   const fetchStudents = async () => {
     try {
       const res = await axios.get("http://localhost:5000/api/students");
-      setStudentList(res.data);
+      if (Array.isArray(res.data)) {
+        setStudentList(res.data);
+      }
     } catch (err) {
       console.error("Fetch failed", err);
     }
@@ -28,31 +32,35 @@ const ManageStudents = () => {
 
   const handleSubmit = async () => {
     if (!batchStrength) return alert("Please enter the Batch Strength");
-    
-    // PAYLOAD: Using 'strength' to match the updated server.js
-    const payload = { 
-        year, 
-        branch, 
-        strength: batchStrength 
-    };
+
+    const payload = { year, branch, batch, strength: batchStrength };
 
     try {
       if (isEditing) {
-        await axios.put("http://localhost:5000/api/students/update", payload);
+        await axios.put(
+          "http://localhost:5000/api/students/update",
+          payload
+        );
         alert("Updated successfully");
         resetForm();
       } else {
-        await axios.post("http://localhost:5000/api/students/add", payload);
-        
-        // Auto-change branch logic
+        await axios.post(
+          "http://localhost:5000/api/students/add",
+          payload
+        );
+        alert("Batch added!");
+
         const currentIndex = branchOrder.indexOf(branch);
         setBranch(branchOrder[(currentIndex + 1) % branchOrder.length]);
-        
+        setBatch("A");
         setBatchStrength("");
         fetchStudents();
       }
     } catch (err) {
-      alert(err.response?.data?.message || "Operation failed");
+      alert(
+        err.response?.data?.message ||
+          "Operation failed. Check if Year + Branch + Batch already exists."
+      );
     }
   };
 
@@ -60,15 +68,17 @@ const ManageStudents = () => {
     setIsEditing(true);
     setYear(s.year_of_join);
     setBranch(s.branch);
-    // MAPPING: Pulling Branch_Strength from the database results
-    setBatchStrength(s.Branch_Strength); 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setBatch(s.batch || "A");
+    setBatchStrength(s.end_serial || "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleDelete = async (y, b) => {
-    if (window.confirm(`Delete ${b} ${y} record?`)) {
+  const handleDelete = async (y, b, bt) => {
+    if (window.confirm(`Delete ${b} Batch ${bt} (${y}) record?`)) {
       try {
-        await axios.delete(`http://localhost:5000/api/students/${y}/${b}`);
+        await axios.delete(
+          `http://localhost:5000/api/students/${y}/${b}/${bt}`
+        );
         fetchStudents();
       } catch (err) {
         alert("Delete failed");
@@ -78,6 +88,7 @@ const ManageStudents = () => {
 
   const resetForm = () => {
     setBatchStrength("");
+    setBatch("A");
     setIsEditing(false);
     fetchStudents();
   };
@@ -85,50 +96,109 @@ const ManageStudents = () => {
   return (
     <div className="dashboard-container">
       <AdminSidebar />
-      
       <main className="main-content">
         <div className="manage-card">
           <h2 className="card-title">
-            {isEditing ? "Edit Student Record" : "Manage Students"}
+            {isEditing ? "Edit Record" : "Manage Students"}
           </h2>
-          
+
           <div className="form-section">
             <div className="input-grid">
+
               <div className="input-box">
                 <label>Year of Joining</label>
                 <div className="year-stepper">
-                  <button className="step-btn" onClick={() => setYear(year - 1)} disabled={isEditing}><FaMinus /></button>
-                  <input type="number" value={year} readOnly className="year-input" />
-                  <button className="step-btn" onClick={() => setYear(year + 1)} disabled={isEditing}><FaPlus /></button>
+                  <button
+                    className="step-btn"
+                    onClick={() => setYear(year - 1)}
+                    disabled={isEditing}
+                  >
+                    <FaMinus />
+                  </button>
+
+                  <input
+                    type="number"
+                    value={year}
+                    readOnly
+                    className="year-input"
+                  />
+
+                  <button
+                    className="step-btn"
+                    onClick={() => setYear(year + 1)}
+                    disabled={isEditing}
+                  >
+                    <FaPlus />
+                  </button>
                 </div>
               </div>
-              
+
               <div className="input-box">
                 <label>Branch</label>
-                <select value={branch} onChange={(e) => setBranch(e.target.value)} disabled={isEditing} className="main-input">
-                  {branchOrder.map(b => <option key={b} value={b}>{b}</option>)}
+                <select
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                  disabled={isEditing}
+                  className="main-input"
+                >
+                  {branchOrder.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
                 </select>
               </div>
-              
+
+              <div className="input-box">
+                <label>Batch</label>
+                <div className="batch-selector">
+                  {batchOptions.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      className={`batch-btn ${
+                        batch === opt ? "active" : ""
+                      }`}
+                      onClick={() => setBatch(opt)}
+                      disabled={isEditing}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="input-box">
                 <label>Batch Strength</label>
-                <input 
-                  type="number" 
-                  value={batchStrength} 
-                  onChange={(e) => setBatchStrength(e.target.value)} 
+                <input
+                  type="number"
+                  value={batchStrength}
+                  onChange={(e) =>
+                    setBatchStrength(e.target.value)
+                  }
                   placeholder="e.g. 60"
                   className="main-input"
                 />
               </div>
 
               <div className="input-box button-group">
-                <button className="submit-batch-btn" onClick={handleSubmit}>
-                  {isEditing ? "Save Changes" : "Add Batch"}
+                <button
+                  className="submit-batch-btn"
+                  onClick={handleSubmit}
+                >
+                  {isEditing ? "Save" : "Add Batch"}
                 </button>
+
                 {isEditing && (
-                  <button className="cancel-btn" onClick={resetForm}>Cancel</button>
+                  <button
+                    className="cancel-btn"
+                    onClick={resetForm}
+                  >
+                    Cancel
+                  </button>
                 )}
               </div>
+
             </div>
           </div>
 
@@ -138,6 +208,7 @@ const ManageStudents = () => {
                 <tr>
                   <th>Year</th>
                   <th>Branch</th>
+                  <th>Batch</th>
                   <th>Strength</th>
                   <th className="text-center">Actions</th>
                 </tr>
@@ -147,17 +218,30 @@ const ManageStudents = () => {
                   <tr key={i}>
                     <td>{s.year_of_join}</td>
                     <td>{s.branch}</td>
-                    {/* DISPLAY: Accessing the DB column name */}
-                    <td>{s.Branch_Strength}</td>
+                    <td className="batch-td">{s.batch}</td>
+                    <td>{s.end_serial}</td>
                     <td className="action-cell">
-                      <FaEdit className="edit-btn" onClick={() => handleEdit(s)} title="Edit" />
-                      <FaTrash className="delete-btn" onClick={() => handleDelete(s.year_of_join, s.branch)} title="Delete" />
+                      <FaEdit
+                        className="edit-btn"
+                        onClick={() => handleEdit(s)}
+                      />
+                      <FaTrash
+                        className="delete-btn"
+                        onClick={() =>
+                          handleDelete(
+                            s.year_of_join,
+                            s.branch,
+                            s.batch
+                          )
+                        }
+                      />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
         </div>
       </main>
     </div>
