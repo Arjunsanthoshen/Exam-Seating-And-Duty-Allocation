@@ -14,19 +14,23 @@ app.use(express.json());
 /* -------------------------------------------------------------------------- */
 /*                            DATABASE CONNECTION                             */
 /* -------------------------------------------------------------------------- */
-
-const db = mysql.createConnection({
+const db = mysql.createPool({
     host: "localhost",
     user: "root",
     password: "tree",
-    database: "college"
+    database: "college",
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-db.connect((err) => {
+// Test connection
+db.getConnection((err, connection) => {
     if (err) {
         console.error("Database connection failed:", err);
     } else {
-        console.log("Connected to mysql successfully!");
+        console.log("Connected to MySQL successfully!");
+        connection.release(); // VERY IMPORTANT
     }
 });
 
@@ -35,75 +39,126 @@ db.connect((err) => {
 /* -------------------------------------------------------------------------- */
 
 app.get('/api/students', (req, res) => {
+
     const query = `
-        SELECT year_of_join, branch, Branch_Strength 
+        SELECT year_of_join, branch, batch, end_serial
         FROM Student_manage 
         ORDER BY year_of_join DESC, branch ASC
     `;
 
     db.query(query, (err, results) => {
-        if (err) return res.status(500).json({ error: "Database fetch failed" });
+
+        if (err) return res.status(500).json(err);
+
         res.json(results);
+
     });
+
 });
 
+
 app.post('/api/students/add', (req, res) => {
+
     const { year, branch, strength } = req.body;
 
     const checkQuery = `
-        SELECT * FROM Student_manage 
-        WHERE year_of_join = ? AND branch = ?
+        SELECT *
+        FROM Student_manage
+        WHERE year_of_join=? AND branch=? AND batch='A'
     `;
 
     db.query(checkQuery, [year, branch], (err, results) => {
+
         if (err) return res.status(500).json(err);
+
 
         if (results.length > 0) {
-            return res.status(409).json({ message: `Record for ${branch} ${year} already exists!` });
+
+            return res.status(409).json({
+                message: `Record exists`
+            });
+
         }
 
+
         const insertQuery = `
-            INSERT INTO Student_manage 
-            (year_of_join, branch, Branch_Strength, stid)
-            VALUES (?, ?, ?, 1)
+            INSERT INTO Student_manage
+            (year_of_join, branch, batch, end_serial)
+            VALUES (?, ?, 'A', ?)
         `;
 
-        db.query(insertQuery, [year, branch, strength], (err) => {
-            if (err) return res.status(500).json(err);
-            res.status(200).json({ message: "Record saved successfully" });
-        });
+
+        db.query(insertQuery,
+            [year, branch, strength],
+
+            (err) => {
+
+                if (err) return res.status(500).json(err);
+
+                res.json({
+                    message: "Saved"
+                });
+
+            });
+
     });
+
 });
+
 
 app.put('/api/students/update', (req, res) => {
+
     const { year, branch, strength } = req.body;
 
+
     const query = `
-        UPDATE Student_manage 
-        SET Branch_Strength = ? 
-        WHERE year_of_join = ? AND branch = ?
+        UPDATE Student_manage
+        SET end_serial=?
+        WHERE year_of_join=? AND branch=? AND batch='A'
     `;
 
-    db.query(query, [strength, year, branch], (err) => {
-        if (err) return res.status(500).json(err);
-        res.json({ message: "Record updated successfully" });
-    });
+
+    db.query(query,
+        [strength, year, branch],
+
+        (err) => {
+
+            if (err) return res.status(500).json(err);
+
+            res.json({
+                message: "Updated"
+            });
+
+        });
+
 });
+
 
 app.delete('/api/students/:year/:branch', (req, res) => {
+
     const { year, branch } = req.params;
 
+
     const query = `
-        DELETE FROM Student_manage 
-        WHERE year_of_join = ? AND branch = ?
+        DELETE FROM Student_manage
+        WHERE year_of_join=? AND branch=? AND batch='A'
     `;
 
-    db.query(query, [year, branch], (err) => {
-        if (err) return res.status(500).json(err);
-        res.json({ message: "Record deleted successfully" });
-    });
-});
 
+    db.query(query,
+        [year, branch],
+
+        (err) => {
+
+            if (err) return res.status(500).json(err);
+
+            res.json({
+                message: "Deleted"
+            });
+
+        });
+
+});
 /* -------------------------------------------------------------------------- */
 /*                             MANAGE ROOMS ROUTES                            */
 /* -------------------------------------------------------------------------- */
@@ -183,7 +238,6 @@ app.post('/api/rooms', (req, res) => {
         res.json({ message: "Room saved successfully" });
     });
 });
-
 /* -------------------------------------------------------------------------- */
 /*                           MANAGE TEACHERS ROUTES                           */
 /* -------------------------------------------------------------------------- */
@@ -252,83 +306,162 @@ app.put('/api/teachers/availability', (req, res) => {
         }
     );
 });
-
 /* -------------------------------------------------------------------------- */
 /*                          EXAM SCHEDULE ROUTES                              */
 /* -------------------------------------------------------------------------- */
 
-// GET ALL
+
+// GET ALL EXAMS
 app.get('/api/exam-schedule', (req, res) => {
+
     const query = `
-        SELECT * FROM Exam_schedule
-        ORDER BY exam_date DESC, year ASC
+        SELECT *
+        FROM exam_schedule
+        ORDER BY exam_date ASC, session ASC, branch ASC
     `;
 
     db.query(query, (err, results) => {
-        if (err) return res.status(500).json(err);
+
+        if (err)
+            return res.status(500).json(err);
+
         res.json(results);
+
     });
+
 });
 
-// ADD
+
+
+// ADD EXAM
 app.post('/api/exam-schedule/add', (req, res) => {
-    const { year, date, session, subjects, examNumber } = req.body;
 
-    const values = Object.entries(subjects)
-        .filter(([_, name]) => name && name.trim() !== "")
-        .map(([branch, name]) =>
-            [year, examNumber, date, session, branch, name]
-        );
+    const {
+        year,
+        exam_date,
+        session,
+        branch,
+        subject,
+        sub_code
+    } = req.body;
 
-    if (values.length === 0)
-        return res.status(400).json({ error: "No subjects to save" });
 
     const query = `
-        INSERT INTO Exam_schedule
-        (year, exam_number, exam_date, session, branch, subject)
-        VALUES ?
+        INSERT INTO exam_schedule
+        (year, exam_date, session, branch, subject, sub_code)
+        VALUES (?, ?, ?, ?, ?, ?)
     `;
 
-    db.query(query, [values], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: "Schedule saved successfully" });
-    });
+
+    db.query(query,
+
+        [
+            year,
+            exam_date,
+            session,
+            branch,
+            subject,
+            sub_code
+        ],
+
+        (err) => {
+
+            if (err) {
+
+                console.log(err);
+
+                return res.status(500).json({
+                    message: "Error saving exam schedule"
+                });
+
+            }
+
+            res.json({
+                message: "Exam schedule added successfully"
+            });
+
+        });
+
 });
 
-// UPDATE
-app.post('/api/exam-schedule/update/:id', (req, res) => {
-    const { year, date, session, subjects, examNumber } = req.body;
 
-    const branch = Object.keys(subjects).find(b => subjects[b] !== "");
-    const subjectName = subjects[branch];
+
+// UPDATE EXAM
+app.put('/api/exam-schedule/update/:id', (req, res) => {
+
+    const {
+        year,
+        exam_date,
+        session,
+        branch,
+        subject,
+        sub_code
+    } = req.body;
+
 
     const query = `
-        UPDATE Exam_schedule
-        SET year=?, exam_number=?, exam_date=?, session=?, branch=?, subject=?
+        UPDATE exam_schedule
+        SET
+        year=?,
+        exam_date=?,
+        session=?,
+        branch=?,
+        subject=?,
+        sub_code=?
         WHERE exam_id=?
     `;
 
+
     db.query(query,
-        [year, examNumber, date, session, branch, subjectName, req.params.id],
+
+        [
+            year,
+            exam_date,
+            session,
+            branch,
+            subject,
+            sub_code,
+            req.params.id
+        ],
+
         (err) => {
-            if (err) return res.status(500).json(err);
-            res.json({ message: "Updated successfully" });
-        }
-    );
+
+            if (err)
+                return res.status(500).json(err);
+
+            res.json({
+                message: "Exam schedule updated successfully"
+            });
+
+        });
+
 });
 
-// DELETE
+
+
+// DELETE EXAM
 app.delete('/api/exam-schedule/:id', (req, res) => {
-    db.query(
-        'DELETE FROM Exam_schedule WHERE exam_id = ?',
-        [req.params.id],
-        (err) => {
-            if (err) return res.status(500).json(err);
-            res.json({ message: "Deleted successfully" });
-        }
-    );
-});
 
+    const query =
+        `DELETE FROM exam_schedule WHERE exam_id=?`;
+
+
+    db.query(query,
+
+        [req.params.id],
+
+        (err) => {
+
+            if (err)
+                return res.status(500).json(err);
+
+            res.json({
+                message: "Exam deleted successfully"
+            });
+
+        });
+
+});
 /* -------------------------------------------------------------------------- */
 /*                                LOGIN ROUTES                                */
 /* -------------------------------------------------------------------------- */
