@@ -15,21 +15,39 @@ app.use(express.json());
 /*                            DATABASE CONNECTION                             */
 /* -------------------------------------------------------------------------- */
 
-const db = mysql.createConnection({
+// const db = mysql.createConnection({
+//     host: "localhost",
+//     user: "root",
+//     password: "tree",
+//     database: "college"
+// });
+
+// db.connect((err) => {
+//     if (err) {
+//         console.error("Database connection failed:", err);
+//     } else {
+//         console.log("Connected to mysql successfully!");
+//     }
+// });
+const db = mysql.createPool({
     host: "localhost",
     user: "root",
     password: "tree",
-    database: "college"
+    database: "college",
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-db.connect((err) => {
+// Test connection
+db.getConnection((err, connection) => {
     if (err) {
         console.error("Database connection failed:", err);
     } else {
-        console.log("Connected to mysql successfully!");
+        console.log("Connected to MySQL successfully!");
+        connection.release(); // VERY IMPORTANT
     }
 });
-
 /* -------------------------------------------------------------------------- */
 /*                        STUDENT MANAGEMENT ROUTES                           */
 /* -------------------------------------------------------------------------- */
