@@ -15,23 +15,6 @@ app.use(express.json());
 /*                            DATABASE CONNECTION                             */
 /* -------------------------------------------------------------------------- */
 
-<<<<<<< HEAD
-// const db = mysql.createConnection({
-//     host: "localhost",
-//     user: "root",
-//     password: "tree",
-//     database: "college"
-// });
-
-// db.connect((err) => {
-//     if (err) {
-//         console.error("Database connection failed:", err);
-//     } else {
-//         console.log("Connected to mysql successfully!");
-//     }
-// });
-=======
->>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
 const db = mysql.createPool({
     host: "localhost",
     user: "root",
