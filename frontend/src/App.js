@@ -9,6 +9,9 @@ import ManageStudents from "./pages/Admin/ManageStudents";
 import MyDutySchedule from "./pages/Teacher/MyDutySchedule";
 import ExamHall from "./pages/Student/ExamHall";
 import Allocation from "./pages/Admin/GenerateSeating";
+import Reports from "./pages/Admin/Reports";
+import Signup from "./pages/Signup";
+
 // import BackButton from "./components/BackButton";
 
 const Placeholder = ({ title }) => (
@@ -28,6 +31,7 @@ function App() {
         <Route path="/" element={<Login />} />
         
         {/* Admin Routes */}
+        <Route path="/signup" element={<Signup />} />
         <Route path="/ExamStatusBoard" element={<ExamStatus />} />
         <Route path="/ManageStudents" element={<ManageStudents />} />
         <Route path="/ManageTeachers" element={<ManageTeachers />} />
@@ -35,7 +39,7 @@ function App() {
         <Route path="/ExamSchedule" element={<ExamSchedule />} />
         <Route path="/GenerateSeating" element={<Allocation/>} />
         <Route path="/GenerateDuties" element={<Placeholder title="Generate Duties" />} />
-        <Route path="/Reports" element={<Placeholder title="Reports" />} />
+        <Route path="/Reports" element={<Reports />} />
         
         {/* Teacher Routes */}
         <Route path="/MyDutySchedule" element={<MyDutySchedule />} />

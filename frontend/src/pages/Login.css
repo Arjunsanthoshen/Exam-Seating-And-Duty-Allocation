@@ -121,3 +121,19 @@
     text-decoration: underline;
     color: #5d3b82;
 }
+
+.signup-link {
+  text-align: center;
+  margin-top: 15px;
+  font-size: 14px;
+}
+
+.create-account {
+  color: #6a4fb3;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.create-account:hover {
+  text-decoration: underline;
+}

@@ -1,6 +1,15 @@
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const XLSX = require("xlsx");
+const path = require("path");
+const fs = require("fs");
+
+const SECRET_KEY = "my_super_secret_key";
+
 
 const app = express();
 
@@ -10,14 +19,38 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use(express.json());
 
+/* -------------------------------------------------------------------------- */
+/*                              FILE UPLOAD SETUP                             */
+/* -------------------------------------------------------------------------- */
+
+const uploadDir = path.join(__dirname, "uploads_files");
+if (fs.existsSync(uploadDir) && !fs.statSync(uploadDir).isDirectory()) {
+    fs.unlinkSync(uploadDir);
+}
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ storage: storage });
+
+const generatedReportsDir = path.join(__dirname, "generated_reports");
+if (!fs.existsSync(generatedReportsDir)) {
+    fs.mkdirSync(generatedReportsDir, { recursive: true });
+}
 /* -------------------------------------------------------------------------- */
 /*                            DATABASE CONNECTION                             */
 /* -------------------------------------------------------------------------- */
-<<<<<<< HEAD
-=======
-
->>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
 const db = mysql.createPool({
     host: "localhost",
     user: "root",
@@ -43,76 +76,19 @@ db.getConnection((err, connection) => {
 app.get('/api/students', (req, res) => {
 
     const query = `
-<<<<<<< HEAD
         SELECT year_of_join, branch, batch, end_serial
-=======
-        SELECT year_of_join, branch, batch, end_serial 
->>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
         FROM Student_manage 
         ORDER BY year_of_join DESC, branch ASC, batch ASC
     `;
 
     db.query(query, (err, results) => {
-<<<<<<< HEAD
-
-        if (err) return res.status(500).json(err);
-
-=======
         if (err) return res.status(500).json({ error: err.message });
->>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
         res.json(results);
 
     });
 
 });
 
-<<<<<<< HEAD
-
-app.post('/api/students/add', (req, res) => {
-
-    const { year, branch, strength } = req.body;
-
-    const checkQuery = `
-        SELECT *
-        FROM Student_manage
-        WHERE year_of_join=? AND branch=? AND batch='A'
-    `;
-
-    db.query(checkQuery, [year, branch], (err, results) => {
-
-        if (err) return res.status(500).json(err);
-
-
-        if (results.length > 0) {
-
-            return res.status(409).json({
-                message: `Record exists`
-            });
-
-        }
-
-
-        const insertQuery = `
-            INSERT INTO Student_manage
-            (year_of_join, branch, batch, end_serial)
-            VALUES (?, ?, 'A', ?)
-        `;
-
-
-        db.query(insertQuery,
-            [year, branch, strength],
-
-            (err) => {
-
-                if (err) return res.status(500).json(err);
-
-                res.json({
-                    message: "Saved"
-                });
-
-            });
-
-=======
 // POST: Add new
 app.post('/api/students/add', (req, res) => {
     const { year, branch, batch, strength } = req.body;
@@ -129,56 +105,17 @@ app.post('/api/students/add', (req, res) => {
             return res.status(500).json({ message: "Duplicate entry or database error" });
         }
         res.status(200).json({ message: 'Saved successfully' });
->>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
     });
 
 });
 
-<<<<<<< HEAD
-
-=======
 // PUT: Update
->>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
 app.put('/api/students/update', (req, res) => {
 
     const { year, branch, strength } = req.body;
 
 
     const query = `
-<<<<<<< HEAD
-        UPDATE Student_manage
-        SET end_serial=?
-        WHERE year_of_join=? AND branch=? AND batch='A'
-    `;
-
-
-    db.query(query,
-        [strength, year, branch],
-
-        (err) => {
-
-            if (err) return res.status(500).json(err);
-
-            res.json({
-                message: "Updated"
-            });
-
-        });
-
-});
-
-
-app.delete('/api/students/:year/:branch', (req, res) => {
-
-    const { year, branch } = req.params;
-
-
-    const query = `
-        DELETE FROM Student_manage
-        WHERE year_of_join=? AND branch=? AND batch='A'
-    `;
-
-=======
         UPDATE Student_manage 
         SET end_serial = ? 
         WHERE year_of_join = ? AND branch = ?
@@ -204,22 +141,7 @@ app.delete('/api/students/:year/:branch/:batch', (req, res) => {
         }
     );
 });
->>>>>>> 9d7f3ff0e644adb181f9a7b4a83585322fde5149
 
-    db.query(query,
-        [year, branch],
-
-        (err) => {
-
-            if (err) return res.status(500).json(err);
-
-            res.json({
-                message: "Deleted"
-            });
-
-        });
-
-});
 /* -------------------------------------------------------------------------- */
 /*                             MANAGE ROOMS ROUTES                            */
 /* -------------------------------------------------------------------------- */
@@ -314,36 +236,43 @@ app.get('/api/teachers', (req, res) => {
     });
 });
 
-app.post('/api/teachers', (req, res) => {
-    const { username, password, name, availability, department, phone } = req.body;
+app.post('/api/teachers', async (req, res) => {
+    const { username, password, name, department, phone } = req.body;
+    const availability = "Yes";
 
-    db.beginTransaction(err => {
-        if (err) return res.status(500).json(err);
+    if (!username || !password || !name || !department || !phone) {
+        return res.status(400).json({ message: "All fields are required" });
+    }
 
-        db.query(
-            `INSERT INTO Users (username, role, password) VALUES (?, 'Teacher', ?)`,
-            [username, password],
-            (err) => {
-                if (err) return db.rollback(() =>
-                    res.status(500).json({ message: "Username already exists" })
-                );
+    let connection;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        connection = await db.promise().getConnection();
+        await connection.beginTransaction();
 
-                db.query(
-                    `INSERT INTO Teacher (username, name, availability, department, phone)
-                     VALUES (?, ?, ?, ?, ?)`,
-                    [username, name, availability, department, phone],
-                    (err) => {
-                        if (err) return db.rollback(() => res.status(500).json(err));
-
-                        db.commit(err => {
-                            if (err) return db.rollback(() => res.status(500).json(err));
-                            res.json({ message: "Teacher added successfully" });
-                        });
-                    }
-                );
-            }
+        await connection.query(
+            `INSERT INTO Users (username, role, password)
+             VALUES (?, 'Teacher', ?)`,
+            [username, hashedPassword]
         );
-    });
+
+        await connection.query(
+            `INSERT INTO Teacher (username, name, availability, department, phone)
+             VALUES (?, ?, ?, ?, ?)`,
+            [username, name, availability, department, phone]
+        );
+
+        await connection.commit();
+        res.json({ message: "Teacher added successfully" });
+    } catch (error) {
+        if (connection) await connection.rollback();
+        if (error && error.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({ message: "Username already exists" });
+        }
+        res.status(500).json({ message: "Failed to add teacher" });
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.delete('/api/teachers/:username', (req, res) => {
@@ -366,6 +295,104 @@ app.put('/api/teachers/availability', (req, res) => {
             res.json({ message: "Availability updated successfully" });
         }
     );
+});
+
+/* -------------------------------------------------------------------------- */
+/*                         TEACHER EXCEL UPLOAD ROUTE                         */
+/* -------------------------------------------------------------------------- */
+
+app.post("/api/teachers/upload-excel", upload.single("file"), async (req, res) => {
+
+    console.log("Excel upload request received");
+
+    try {
+
+        if (!req.file) {
+            console.log("No file uploaded");
+            return res.status(400).json({ message: "No file uploaded" });
+        }
+
+        console.log("Uploaded file:", req.file.filename);
+
+        const workbook = XLSX.readFile(req.file.path);
+
+        const sheetName = workbook.SheetNames[0];
+
+        const sheet = workbook.Sheets[sheetName];
+
+        const rows = XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+            defval: "",
+            blankrows: false
+        });
+
+        if (!rows.length) {
+            return res.status(400).json({ message: "Excel file is empty" });
+        }
+
+        let processedCount = 0;
+        const role = "Teacher";
+        const availability = "Yes";
+        const hashedDefaultPassword = await bcrypt.hash("sjcet", 10);
+
+        const hasHeader = rows.length > 0 && (
+            String(rows[0][0] || "").trim().toLowerCase() === "user_name" ||
+            String(rows[0][0] || "").trim().toLowerCase() === "username"
+        );
+        const dataRows = hasHeader ? rows.slice(1) : rows;
+
+        for (const row of dataRows) {
+            const username = String(row[0] || "").trim();
+            const name = String(row[1] || "").trim();
+            const department = String(row[2] || "").trim();
+            const phone = String(row[3] || "").trim();
+
+            if (!username || !name || !department || !phone) {
+                continue;
+            }
+
+            await db.promise().query(
+                `INSERT INTO Users (username, role, password)
+                 VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                 role=VALUES(role),
+                 password=VALUES(password)`,
+                [username, role, hashedDefaultPassword]
+            );
+
+            await db.promise().query(
+                `INSERT INTO Teacher (username, name, availability, department, phone)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                 name=VALUES(name),
+                 department=VALUES(department),
+                 phone=VALUES(phone),
+                 availability=VALUES(availability)`,
+                [username, name, availability, department, phone]
+            );
+
+            processedCount += 1;
+        }
+
+        fs.unlink(req.file.path, () => {});
+        if (processedCount === 0) {
+            return res.status(400).json({
+                message: "No valid rows found in Excel",
+                hint: "Required Excel order: username, name, department, phone"
+            });
+        }
+        res.json({ message: `Teachers uploaded successfully (${processedCount} rows)` });
+
+    } catch (error) {
+
+        console.error(error);
+        res.status(500).json({
+            message: "Excel upload failed",
+            error: error?.message || "Unknown server error"
+        });
+
+    }
+
 });
 /* -------------------------------------------------------------------------- */
 /*                          EXAM SCHEDULE ROUTES                              */
@@ -528,21 +555,79 @@ app.delete('/api/exam-schedule/:id', (req, res) => {
 /* -------------------------------------------------------------------------- */
 
 app.post("/api/login", (req, res) => {
+
     const { username, password, role } = req.body;
 
     const query = `
         SELECT * FROM Users
-        WHERE username = ? AND password = ? AND role = ?
+        WHERE username = ? AND role = ?
     `;
 
-    db.query(query, [username, password, role], (err, results) => {
-        if (err) return res.status(500).json({ message: "Server error" });
+    db.query(query, [username, role], async (err, results) => {
 
-        if (results.length > 0)
-            res.json({ success: true, role });
-        else
-            res.status(401).json({ success: false, message: "Invalid credentials" });
+        if (err)
+            return res.status(500).json({ message: "Server error" });
+
+        if (results.length === 0)
+            return res.status(401).json({ message: "User not found" });
+
+        const user = results[0];
+
+        const match = await bcrypt.compare(password, user.password);
+
+        if (!match)
+            return res.status(401).json({ message: "Incorrect password" });
+
+        const token = jwt.sign(
+            { username: user.username, role: user.role },
+            SECRET_KEY,
+            { expiresIn: "2h" }
+        );
+
+        res.json({
+            success: true,
+            role: user.role,
+            token: token
+        });
+
     });
+
+});
+
+app.post("/api/signup", async (req, res) => {
+
+    const { username, password, role } = req.body;
+
+    try {
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const query = `
+        INSERT INTO Users (username, role, password)
+        VALUES (?, ?, ?)
+        `;
+
+        db.query(query, [username, role, hashedPassword], (err) => {
+
+            if (err)
+                return res.status(500).json({
+                    message: "Username already exists"
+                });
+
+            res.json({
+                message: "User created successfully"
+            });
+
+        });
+
+    } catch (error) {
+
+        res.status(500).json({
+            message: "Server error"
+        });
+
+    }
+
 });
 
 
@@ -781,10 +866,29 @@ app.post('/api/allocation/generate', async (req, res) => {
             }
         }
 
+        const pdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, examDate);
+        const nextReportNumber = await getNextHallWiseReportNumber(connection);
+        const reportName = `hall-wise-report${nextReportNumber}`;
+        const fileName = `${reportName}.pdf`;
+        const filePath = path.join(generatedReportsDir, fileName);
+
+        fs.writeFileSync(filePath, pdfBuffer);
+
+        const [[reportIdRow]] = await connection.query(
+            `SELECT COALESCE(MAX(report_id), 0) + 1 AS nextReportId FROM Reports`
+        );
+
+        await connection.query(
+            `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
+             VALUES (?, ?, ?, ?, ?)`,
+            [reportIdRow.nextReportId, "Hall-wise", examDate, reportName, filePath]
+        );
+
         await connection.commit();
 
         res.json({
-            message: "Allocation generated successfully"
+            message: "Allocation generated successfully",
+            reportName
         });
 
     } catch (error) {
@@ -848,7 +952,369 @@ app.get('/api/allocation/saved-state', (req, res) => {
     });
 });
 
+// ----------------------------------------------------------------------------
+//                        REPORT ROUTES
+// ----------------------------------------------------------------------------
+const puppeteer = require("puppeteer");
 
+async function buildHallSeatingRows(connection, examId) {
+    const query = `
+SELECT 
+    s.room_no,
+    s.block,
+    s.column_no,
+    s.bench_no,
+    s.seat_position,
+    s.branch,
+    s.roll_no,
+    r.cap_per_bench,
+    r.col1,
+    r.col2,
+    r.col3,
+    r.col4,
+    r.col5
+FROM seating_allocation s
+JOIN Rooms r ON s.room_no = r.room_no AND s.block = r.block
+WHERE s.exam_id = ?
+ORDER BY s.block, s.room_no, s.column_no, s.bench_no
+`;
+
+    const [rows] = await connection.query(query, [examId]);
+    return rows;
+}
+
+function buildHallSeatingHtml(rows, examDate) {
+    const rooms = {};
+
+    rows.forEach(r => {
+        const key = `${r.block}-${r.room_no}`;
+
+        if (!rooms[key]) {
+            const columns = [r.col1, r.col2, r.col3, r.col4, r.col5]
+                .filter(c => c && c > 0);
+
+            const maxRows = Math.max(...columns);
+
+            rooms[key] = {
+                seats: [],
+                columns: columns,
+                maxRows: maxRows,
+                cap: r.cap_per_bench
+            };
+        }
+
+        rooms[key].seats.push(r);
+    });
+
+    let html = `
+        <html>
+        <head>
+
+        <style>
+
+        body{
+            font-family: Arial;
+            text-align:center;
+        }
+
+        .college{
+            font-size:20px;
+            font-weight:bold;
+        }
+
+        .room{
+            font-size:22px;
+            margin-top:30px;
+        }
+
+        table{
+            border-collapse:collapse;
+            margin:auto;
+            margin-top:20px;
+        }
+
+        th,td{
+            border:1px solid black;
+            padding:8px;
+            width:60px;
+        }
+
+        .page{
+            page-break-after:always;
+        }
+
+        </style>
+
+        </head>
+
+        <body>
+
+        <div class="college">
+        ST. JOSEPH'S COLLEGE OF ENGINEERING & TECHNOLOGY, PALAI
+        </div>
+
+        <div>
+        Seating Arrangement - ${examDate}
+        </div>
+        `;
+
+    Object.keys(rooms).forEach(room => {
+
+        html += `<div class="page">`;
+
+        html += `<div class="room">Room: ${room}</div>`;
+
+        html += `<table>`;
+
+        /* MAIN COLUMN HEADER */
+
+        html += `<tr>`;
+
+        rooms[room].columns.forEach((_, index) => {
+
+            const letter = String.fromCharCode(65 + index);
+
+            if (rooms[room].cap === 2)
+                html += `<th colspan="2">${letter}</th>`;
+            else
+                html += `<th>${letter}</th>`;
+
+        });
+
+        html += `</tr>`;
+
+
+        /* SUB HEADER ONLY IF 2 PER BENCH */
+
+        if (rooms[room].cap === 2) {
+
+            html += `<tr>`;
+
+            rooms[room].columns.forEach(() => {
+
+                html += `<th>L</th>`;
+                html += `<th>R</th>`;
+
+            });
+
+            html += `</tr>`;
+        }
+
+
+        /* BUILD SEAT MAP */
+
+        const grid = {};
+
+        rooms[room].seats.forEach(seat => {
+
+            if (!grid[seat.bench_no])
+                grid[seat.bench_no] = {};
+
+            if (!grid[seat.bench_no][seat.column_no])
+                grid[seat.bench_no][seat.column_no] = {};
+
+            if (rooms[room].cap === 2) {
+
+                grid[seat.bench_no][seat.column_no][seat.seat_position] =
+                    seat.roll_no;
+
+            } else {
+
+                grid[seat.bench_no][seat.column_no].left =
+                    seat.roll_no;
+
+            }
+
+        });
+
+
+        /* GENERATE TABLE ROWS */
+
+        for (let r = 1; r <= rooms[room].maxRows; r++) {
+
+            html += `<tr>`;
+
+            rooms[room].columns.forEach((benchCount, cIndex) => {
+
+                const col = cIndex + 1;
+
+                /* BENCH DOES NOT EXIST */
+
+                if (r > benchCount) {
+
+                    if (rooms[room].cap === 2)
+                        html += `<td style="background:black"></td><td style="background:black"></td>`;
+                    else
+                        html += `<td style="background:black"></td>`;
+
+                    return;
+                }
+
+                const seat = (grid[r] && grid[r][col]) ? grid[r][col] : {};
+
+                if (rooms[room].cap === 2) {
+
+                    html += `<td>${seat.left || ""}</td>`;
+                    html += `<td>${seat.right || ""}</td>`;
+
+                } else {
+
+                    html += `<td>${seat.left || ""}</td>`;
+
+                }
+
+            });
+
+            html += `</tr>`;
+        }
+
+        html += `</table>`;
+
+        html += `</div>`;
+
+    });
+
+    html += `</body></html>`;
+    return html;
+}
+
+async function renderPdfFromHtml(html) {
+    const browser = await puppeteer.launch({
+        headless: "new",
+        args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+
+    try {
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: "networkidle0" });
+
+        return await page.pdf({
+            format: "A4",
+            landscape: true,
+            printBackground: true,
+            margin: {
+                top: "20px",
+                bottom: "20px",
+                left: "20px",
+                right: "20px"
+            }
+        });
+    } finally {
+        await browser.close();
+    }
+}
+
+async function generateHallSeatingPdfByExamId(connection, examId, examDate) {
+    const rows = await buildHallSeatingRows(connection, examId);
+
+    if (!rows.length) {
+        throw new Error("No seating found");
+    }
+
+    const html = buildHallSeatingHtml(rows, examDate);
+    return renderPdfFromHtml(html);
+}
+
+async function getNextHallWiseReportNumber(connection) {
+    const [rows] = await connection.query(
+        `SELECT report_name
+         FROM Reports
+         WHERE report_name LIKE 'hall-wise-report%'`
+    );
+
+    const maxNumber = rows.reduce((max, row) => {
+        const match = row.report_name && row.report_name.match(/hall-wise-report(\d+)$/i);
+        if (!match) {
+            return max;
+        }
+        return Math.max(max, Number(match[1]));
+    }, 0);
+
+    return maxNumber + 1;
+}
+
+app.get("/api/reports", async (req, res) => {
+    const { examDate, reportType } = req.query;
+    const filters = [];
+    const params = [];
+
+    if (examDate) {
+        filters.push("exam_date = ?");
+        params.push(examDate);
+    }
+
+    if (reportType) {
+        filters.push("report_type = ?");
+        params.push(reportType);
+    }
+
+    const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+
+    try {
+        const [rows] = await db.promise().query(
+            `SELECT report_id, report_type, exam_date, report_name, generated_at, filepath
+             FROM Reports
+             ${whereClause}
+             ORDER BY generated_at DESC, report_id DESC`,
+            params
+        );
+
+        res.json(rows);
+    } catch (error) {
+        console.error("Fetch Reports Error:", error);
+        res.status(500).json({ message: "Failed to fetch reports" });
+    }
+});
+
+app.get("/api/reports/:reportId/download", async (req, res) => {
+    try {
+        const [rows] = await db.promise().query(
+            `SELECT report_name, filepath FROM Reports WHERE report_id = ?`,
+            [req.params.reportId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: "Report not found" });
+        }
+
+        const report = rows[0];
+        if (!report.filepath || !fs.existsSync(report.filepath)) {
+            return res.status(404).json({ message: "Report file not found" });
+        }
+
+        return res.download(report.filepath, `${report.report_name}.pdf`);
+    } catch (error) {
+        console.error("Download Report Error:", error);
+        res.status(500).json({ message: "Failed to download report" });
+    }
+});
+
+app.get("/api/reports/hall-seating/:date", async (req, res) => {
+    const examDate = req.params.date;
+
+    try {
+        const [examRows] = await db.promise().query(
+            `SELECT exam_id FROM Exam_schedule WHERE exam_date = ? ORDER BY exam_id DESC LIMIT 1`,
+            [examDate]
+        );
+
+        if (!examRows.length) {
+            return res.status(404).json({ message: "No exam found" });
+        }
+
+        const pdf = await generateHallSeatingPdfByExamId(db.promise(), examRows[0].exam_id, examDate);
+
+        res.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename=hall_seating_${examDate}.pdf`
+        });
+
+        res.send(pdf);
+    } catch (error) {
+        console.error("Generate Hall Seating Report Error:", error);
+        res.status(500).json({ message: error.message || "Failed to generate report" });
+    }
+});
 
 
 /* -------------------------------------------------------------------------- */

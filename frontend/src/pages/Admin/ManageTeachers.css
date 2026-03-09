@@ -13,7 +13,8 @@
   background: white;
   border-radius: 12px;
   overflow: hidden;
-  margin-bottom: 30px;
+  margin-bottom: 50px;
+  padding-bottom:40px;
   box-shadow: 0 6px 15px rgba(0,0,0,0.15);
 }
 
@@ -29,7 +30,15 @@
   display: flex;
   flex-wrap: wrap;
   gap: 15px;
+  align-items: flex-start;
+  min-height: 130px;
 }
+
+.add-form button{
+  position:relative;
+  z-index:5;
+}
+
 
 .add-form input {
   padding: 10px;
@@ -45,6 +54,13 @@
   padding: 10px 20px;
   border-radius: 8px;
   cursor: pointer;
+  position: relative;
+  z-index: 10;
+  transition: 0.2s;
+}
+
+.btn-primary:hover{
+  background:#355a8a;
 }
 
 .search-box {
@@ -92,4 +108,87 @@ td {
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.excel-upload{
+  display:flex;
+  align-items:center;
+  gap:150px;
+  margin-top:20px;
+}
+
+.file-btn{
+  background:#4a6fa5;
+  color:white;
+  padding:8px 16px;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:14px;
+}
+
+.file-btn:hover{
+  background:#395b8a;
+}
+
+.file-name{
+  font-size:14px;
+  color:#333;
+}
+
+.excel-upload-box{
+  margin-top:20px;
+  display:flex;
+  flex-direction: column;
+  align-items: center;
+  gap:12px;
+}
+
+.upload-area{
+  width:360px;
+  border:2px dashed #b8c6db;
+  border-radius:10px;
+  padding:18px;
+  text-align:center;
+  cursor:pointer;
+  background:#f8fbff;
+  transition:0.3s;
+  position:relative;
+  z-index:1;
+}
+.upload-area:hover{
+  background:#eef4ff;
+  border-color:#4a6fa5;
+}
+
+.upload-title{
+  font-weight:600;
+  font-size:16px;
+  margin-bottom:5px;
+}
+
+.upload-subtitle{
+  font-size:13px;
+  color:#666;
+}
+
+.file-selected{
+  margin-top:10px;
+  font-size:13px;
+  color:#333;
+}
+
+.upload-area{
+  width:360px;
+  border:2px dashed #b8c6db;
+  border-radius:10px;
+  padding:18px;
+  text-align:center;
+  cursor:pointer;
+  background:#f8fbff;
+  transition:0.3s;
+  margin-bottom:10px;
+}
+
+.excel-submit{
+  margin-top:10px;
 }
