@@ -7,18 +7,34 @@ import './ManageRooms.css';
 const ManageRooms = () => {
     const [rooms, setRooms] = useState([]);
     const [formData, setFormData] = useState({
-        block: '', room_no: '', capacity: 30, cap_per_bench: 1,
+        block: '', room_no: '', capacity: 0, cap_per_bench: 1,
         col1: 0, col2: 0, col3: 0, col4: 0, col5: 0
     });
     const [blocks, setBlocks] = useState([]);
     const [newBlockName, setNewBlockName] = useState("");
     const benchOptions = ["Nil", 5, 6, 7, 8, 9, 10];
-    // const blockOptions = ["MTB", "SJB", "SJPB", "SPB", "SFB"];
 
     useEffect(() => {
         fetchRooms();
         fetchBlocks();
     }, []);
+
+    // NEW: Automatically calculate Total Capacity based on columns and students per bench
+    useEffect(() => {
+        const totalBenches = 
+            (parseInt(formData.col1) || 0) + 
+            (parseInt(formData.col2) || 0) + 
+            (parseInt(formData.col3) || 0) + 
+            (parseInt(formData.col4) || 0) + 
+            (parseInt(formData.col5) || 0);
+        
+        const calculatedCapacity = totalBenches * formData.cap_per_bench;
+
+        setFormData(prev => ({
+            ...prev,
+            capacity: calculatedCapacity
+        }));
+    }, [formData.col1, formData.col2, formData.col3, formData.col4, formData.col5, formData.cap_per_bench]);
 
     const fetchBlocks = async () => {
         try {
@@ -72,7 +88,7 @@ const ManageRooms = () => {
             await axios.post('http://localhost:5000/api/rooms', formData);
             alert("Room saved successfully!");
             setFormData({
-                block: '', room_no: '', capacity: 30, cap_per_bench: 1,
+                block: '', room_no: '', capacity: 0, cap_per_bench: 1,
                 col1: 0, col2: 0, col3: 0, col4: 0, col5: 0
             });
             fetchRooms(); 
@@ -89,10 +105,9 @@ const ManageRooms = () => {
     const handleDelete = async (block, room_no) => {
         if (window.confirm(`Are you sure you want to delete room ${room_no} in block ${block}?`)) {
             try {
-                // Updated to pass both block and room_no in the URL
                 await axios.delete(`http://localhost:5000/api/rooms/${block}/${room_no}`);
                 alert("Room deleted successfully");
-                fetchRooms(); // Refresh the table
+                fetchRooms(); 
             } catch (err) {
                 console.error("Delete Error:", err);
                 alert("Failed to delete room");
@@ -149,15 +164,15 @@ const ManageRooms = () => {
                                 />
                             </div>
 
+                            {/* REMOVED TOTAL CAPACITY DROPDOWN - Displaying Read-Only Value instead */}
                             <div className="input-box">
-                                <label>Total Capacity</label>
-                                <select 
-                                    value={formData.capacity} 
-                                    onChange={e => setFormData({...formData, capacity: e.target.value})}
-                                >
-                                    <option value={30}>30 Students</option>
-                                    <option value={60}>60 Students</option>
-                                </select>
+                                <label>Total Capacity (Auto)</label>
+                                <input 
+                                    type="text" 
+                                    value={`${formData.capacity} Students`} 
+                                    readOnly 
+                                    style={{ backgroundColor: '#f0f0f0', cursor: 'not-allowed' }}
+                                />
                             </div>
 
                             <div className="input-box">
@@ -215,7 +230,7 @@ const ManageRooms = () => {
                                     <th>C3</th>
                                     <th>C4</th>
                                     <th>C5</th>
-                                    <th>Actions</th> {/* Renamed from Edit */}
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
