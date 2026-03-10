@@ -10,6 +10,8 @@ const fs = require("fs");
 
 const SECRET_KEY = "my_super_secret_key";
 
+const BCRYPT_HASH_PREFIX = /^\$2[aby]\$\d{2}\$/;
+
 
 const app = express();
 
@@ -573,7 +575,24 @@ app.post("/api/login", (req, res) => {
 
         const user = results[0];
 
-        const match = await bcrypt.compare(password, user.password);
+        let match = false;
+        const storedPassword = String(user.password || "");
+
+        if (BCRYPT_HASH_PREFIX.test(storedPassword)) {
+            match = await bcrypt.compare(password, storedPassword);
+        } else if (password === storedPassword) {
+            match = true;
+
+            try {
+                const hashedPassword = await bcrypt.hash(password, 10);
+                await db.promise().query(
+                    "UPDATE Users SET password = ? WHERE username = ? AND role = ?",
+                    [hashedPassword, user.username, user.role]
+                );
+            } catch (hashUpdateError) {
+                console.error("Failed to upgrade plain-text password to hash:", hashUpdateError);
+            }
+        }
 
         if (!match)
             return res.status(401).json({ message: "Incorrect password" });
@@ -761,10 +780,8 @@ app.post('/api/allocation/generate', async (req, res) => {
             const columns = [room.col1, room.col2, room.col3, room.col4, room.col5]
                 .filter(c => c > 0);
 
-            const benchesPerColumn =
-                Math.floor(room.capacity / (columns.length * room.cap_per_bench));
-
             for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+                const benchesInColumn = Number(columns[colIndex]) || 0;
 
                 let assignedYear = null;
                 let attempts = 0;
@@ -786,7 +803,7 @@ app.post('/api/allocation/generate', async (req, res) => {
 
                 if (!assignedYear) break;
 
-                for (let bench = 1; bench <= benchesPerColumn; bench++) {
+                for (let bench = 1; bench <= benchesInColumn; bench++) {
 
                     // LEFT
                     if (yearQueues[assignedYear]?.length) {
@@ -1143,9 +1160,9 @@ function buildHallSeatingHtml(rows, examDate) {
                 if (r > benchCount) {
 
                     if (rooms[room].cap === 2)
-                        html += `<td style="background:black"></td><td style="background:black"></td>`;
+                        html += `<td style="background:grey"></td><td style="background:grey"></td>`;
                     else
-                        html += `<td style="background:black"></td>`;
+                        html += `<td style="background:grey"></td>`;
 
                     return;
                 }
