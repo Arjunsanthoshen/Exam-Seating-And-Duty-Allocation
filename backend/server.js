@@ -683,7 +683,10 @@ app.get('/api/allocation/saved-state', (req, res) => {
 });
 
 
-//student portal
+// ----------------------------------------------------------------------------
+//                        Student Portal
+// ----------------------------------------------------------------------------
+
 const SECRET_KEY = "your_jwt_secret_key";
 
 // --- JWT Middleware ---
