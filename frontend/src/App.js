@@ -12,6 +12,7 @@ import Allocation from "./pages/Admin/GenerateSeating";
 import Reports from "./pages/Admin/Reports";
 import Signup from "./pages/Signup";
 
+import GenerateDuties from "./pages/Admin/GenerateDuties";
 // import BackButton from "./components/BackButton";
 
 const Placeholder = ({ title }) => (
@@ -38,8 +39,9 @@ function App() {
         <Route path="/ManageRooms" element={<ManageRooms />} />
         <Route path="/ExamSchedule" element={<ExamSchedule />} />
         <Route path="/GenerateSeating" element={<Allocation/>} />
-        <Route path="/GenerateDuties" element={<Placeholder title="Generate Duties" />} />
         <Route path="/Reports" element={<Reports />} />
+=======
+        <Route path="/GenerateDuties" element={<GenerateDuties/>} />
         
         {/* Teacher Routes */}
         <Route path="/MyDutySchedule" element={<MyDutySchedule />} />
