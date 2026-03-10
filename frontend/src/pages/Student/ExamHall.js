@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import StudentSidebar from './StudentSidebar'; // Import here
+import StudentSidebar from './StudentSidebar';
 import './ExamHall.css';
 
-const Dashboard = () => {
+const ExamHall = () => {
     const navigate = useNavigate();
-    const [profile, setProfile] = useState({});
     const [seating, setSeating] = useState([]);
-    const [view, setView] = useState('exam_hall');
     const [loading, setLoading] = useState(true);
+    const [rollNo, setRollNo] = useState("");
 
     const checkAuth = useCallback(() => {
         const token = localStorage.getItem('token');
@@ -28,13 +27,14 @@ const Dashboard = () => {
 
         const fetchData = async () => {
             try {
-                const profileRes = await axios.get('http://localhost:5000/api/student/profile', config);
-                setProfile(profileRes.data);
-
-                const seatingRes = await axios.get('http://localhost:5000/api/student/seating', config);
-                  console.log("Frontend seating data received:", seatingRes.data); // Should be an array []
-                setSeating(seatingRes.data);
+                // Fetch profile just for the header roll number, and seating data
+                const [profileRes, seatingRes] = await Promise.all([
+                    axios.get('http://localhost:5000/api/student/profile', config),
+                    axios.get('http://localhost:5000/api/student/seating', config)
+                ]);
                 
+                setRollNo(profileRes.data.roll_no || profileRes.data.username);
+                setSeating(seatingRes.data);
                 setLoading(false);
             } catch (err) {
                 if (err.response && (err.response.status === 401 || err.response.status === 403)) {
@@ -43,49 +43,36 @@ const Dashboard = () => {
                 }
             }
         };
-
         fetchData();
     }, [navigate, checkAuth]);
 
-    if (loading) return <div className="loading-screen">Loading Dashboard...</div>;
+    if (loading) return <div className="loading-screen">Loading Exam Hall...</div>;
 
     return (
         <div className="studashboard-container">
-            {/* Using the new Sidebar Component */}
-            <StudentSidebar view={view} setView={setView} />
-
+            <StudentSidebar />
             <main className="main-content">
                 <header className="top-bar">
-                    <h2>Roll Number: {profile.roll_no || profile.username || "N/A"}</h2>
+                    <h2>Roll Number: {rollNo}</h2>
                 </header>
-
                 <div className="content-card">
-                    {view === 'exam_hall' ? (
-                        <div className="seating-info">
-                            {seating.length > 0 ? (
-                                seating.map((s, i) => (
-                                    <div key={i} className="info-row-container">
-                                        <div className="info-row"><span>📅 Date: 24/01/26</span></div>
-                                        <div className="info-row"><span>🏢 Hall: {s.block} {s.room_no}</span></div>
-                                        <div className="info-row"><span>👥 Session: {s.session}</span></div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="info-row">No seating allocation found.</div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="profile-details">
-                            <p><strong>Username:</strong> {profile.username}</p>
-                            <p><strong>Branch:</strong> {profile.branch}</p>
-                            <p><strong>Batch:</strong> {profile.batch}</p>
-                            <p><strong>Year of Join:</strong> {profile.year_of_join}</p>
-                        </div>
-                    )}
+                    <div className="seating-info">
+                        {seating.length > 0 ? (
+                            seating.map((s, i) => (
+                                <div key={i} className="info-row-container">
+                                    <div className="info-row"><span>📅 Date: 24/01/26</span></div>
+                                    <div className="info-row"><span>🏢 Hall: {s.block} {s.room_no}</span></div>
+                                    <div className="info-row"><span>👥 Session: {s.session}</span></div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="info-row">No seating allocation found.</div>
+                        )}
+                    </div>
                 </div>
             </main>
         </div>
     );
 };
 
-export default Dashboard;
+export default ExamHall;
