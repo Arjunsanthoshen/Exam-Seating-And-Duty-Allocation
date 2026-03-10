@@ -50,7 +50,7 @@ const Dashboard = () => {
     if (loading) return <div className="loading-screen">Loading Dashboard...</div>;
 
     return (
-        <div className="dashboard-container">
+        <div className="studashboard-container">
             {/* Using the new Sidebar Component */}
             <StudentSidebar view={view} setView={setView} />
 

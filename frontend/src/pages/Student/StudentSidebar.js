@@ -11,25 +11,29 @@ const StudentSidebar = ({ view, setView }) => {
     };
 
     return (
-        <aside className="sidebar">
-            <div className="nav-group">
-                <p className="nav-label">Dashboard</p>
+        <aside className="student-sidebar">
+            <div className="student-nav-label">
+                <span>🎓</span> Student Portal
+            </div>
+
+            <div className="student-nav-group">
                 <button 
-                    className={view === 'exam_hall' ? 'active' : ''} 
+                    className={`student-nav-item ${view === 'exam_hall' ? 'active' : ''}`} 
                     onClick={() => setView('exam_hall')}
                 >
-                    <span className="icon">👤</span> Exam Hall
+                    <span className="student-nav-icon">👤</span> Exam Hall
                 </button>
+
                 <button 
-                    className={view === 'profile' ? 'active' : ''} 
+                    className={`student-nav-item ${view === 'profile' ? 'active' : ''}`} 
                     onClick={() => setView('profile')}
                 >
-                    <span className="icon">📅</span> Profile
+                    <span className="student-nav-icon">📅</span> Profile
                 </button>
-                {/* You can easily add "Exam Schedule" here later */}
             </div>
-            <button className="logout-btn" onClick={handleLogout}>
-                <span className="icon">⏻</span> Logout
+
+            <button className="student-logout-btn" onClick={handleLogout}>
+                <span className="student-nav-icon">⏻</span> Logout
             </button>
         </aside>
     );

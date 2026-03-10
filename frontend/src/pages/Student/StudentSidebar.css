@@ -1,85 +1,98 @@
-.sidebar {
-    width: 260px;
-    background-color: #dbeafe; /* Light blue sidebar background */
-    height: 100vh;
-    padding: 2rem 1.5rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between; /* Pushes logout to the bottom */
-    box-sizing: border-box;
-    border-right: 1px solid #c3d6f1;
+/* Sidebar Container */
+.student-sidebar {
+  width: 280px;
+  background-color: #5b87c4;
+  display: flex;
+  flex-direction: column;
+  padding: 25px 0;
+  color: white;
+  height: 100vh;
+  box-sizing: border-box;
+  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
+  position: fixed; /* Optional: keeps it locked to the side */
+  left: 0;
+  top: 0;
 }
 
-.nav-label {
-    color: #5e718d;
-    font-size: 0.85rem;
-    font-weight: 600;
-    margin-bottom: 1.5rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+/* Header/Label Area */
+.student-nav-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 25px 35px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.nav-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+/* Nav Grouping */
+.student-nav-group {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
-/* Base button styles */
-.sidebar button {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    padding: 12px 15px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: #334155;
-    font-size: 1rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease-in-out;
+/* Navigation Buttons */
+.student-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 25px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: 0.3s;
+  border-radius: 0 30px 30px 0;
+  margin-right: 15px;
+  width: calc(100% - 15px);
+  text-align: left;
 }
 
-.icon {
-    font-size: 1.2rem;
+.student-nav-item:hover:not(.active) {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
 }
 
-/* Hover effect */
-.sidebar button:hover {
-    background-color: rgba(255, 255, 255, 0.4);
+/* Active State */
+.student-nav-item.active {
+  background-color: #4a74b1;
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
 
-/* Active state from your image */
-.sidebar button.active {
-    background-color: #bcd1ed;
-    border: 1px solid #94a3b8;
-    color: #1e293b;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+/* Icon Styling */
+.student-nav-icon {
+  font-size: 1.1rem;
+  width: 20px;
+  display: flex;
+  justify-content: center;
 }
 
-/* Logout specific styling */
-.logout-btn {
-    margin-top: auto;
-    background-color: rgba(255, 255, 255, 0.3) !important;
-    border: 1px solid #cbd5e1 !important;
-    transition: background 0.3s;
+/* Logout Button at Bottom */
+.student-logout-btn {
+  margin-top: auto;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 25px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: 0.3s;
+  border-radius: 0 30px 30px 0;
+  margin-right: 15px;
 }
 
-.logout-btn:hover {
-    background-color: #fee2e2 !important; /* Slight red tint on hover */
-    color: #b91c1c;
-    border-color: #fecaca !important;
-}
-
-/* Mobile Responsiveness */
-@media (max-width: 768px) {
-    .sidebar {
-        width: 100%;
-        height: auto;
-        padding: 1rem;
-        border-right: none;
-        border-bottom: 1px solid #c3d6f1;
-    }
+.student-logout-btn:hover {
+  background-color: #e63946; /* Red hover for logout */
+  color: white;
 }
