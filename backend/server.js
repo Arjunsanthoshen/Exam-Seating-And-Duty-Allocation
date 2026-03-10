@@ -1,6 +1,7 @@
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
+const jwt = require('jsonwebtoken');
 
 const app = express();
 
@@ -329,24 +330,55 @@ app.delete('/api/exam-schedule/:id', (req, res) => {
 /*                                LOGIN ROUTES                                */
 /* -------------------------------------------------------------------------- */
 
+// app.post("/api/login", (req, res) => {
+//     const { username, password, role } = req.body;
+
+//     const query = `
+//         SELECT * FROM Users
+//         WHERE username = ? AND password = ? AND role = ?
+//     `;
+
+//     db.query(query, [username, password, role], (err, results) => {
+//         if (err) return res.status(500).json({ message: "Server error" });
+
+//         if (results.length > 0)
+//             res.json({ success: true, role });
+//         else
+//             res.status(401).json({ success: false, message: "Invalid credentials" });
+//     });
+// });
 app.post("/api/login", (req, res) => {
     const { username, password, role } = req.body;
 
     const query = `
-        SELECT * FROM Users
+        SELECT * FROM Users 
         WHERE username = ? AND password = ? AND role = ?
     `;
 
     db.query(query, [username, password, role], (err, results) => {
         if (err) return res.status(500).json({ message: "Server error" });
 
-        if (results.length > 0)
-            res.json({ success: true, role });
-        else
+        if (results.length > 0) {
+            // 1. Create the payload (data to store inside the token)
+            const userPayload = { 
+                username: results[0].username, 
+                role: results[0].role 
+            };
+
+            // 2. Generate the JWT Token
+            const accessToken = jwt.sign(userPayload, SECRET_KEY, { expiresIn: '1h' });
+
+            // 3. Send the token back to the frontend
+            res.json({ 
+                success: true, 
+                accessToken: accessToken, // Frontend needs this!
+                role: results[0].role 
+            });
+        } else {
             res.status(401).json({ success: false, message: "Invalid credentials" });
+        }
     });
 });
-
 
 
 // ----------------------------------------------------------------------------
@@ -651,7 +683,79 @@ app.get('/api/allocation/saved-state', (req, res) => {
 });
 
 
+//student portal
+const SECRET_KEY = "your_jwt_secret_key";
 
+// --- JWT Middleware ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        console.log("No token provided");
+        return res.sendStatus(401);
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) {
+            console.log("JWT Verification Error:", err.message);
+            return res.sendStatus(403);
+        }
+        
+        console.log("Logged in user data:", user); // Check if role exists here
+
+        if (user.role !== 'student') {
+            console.log(`Access denied for role: ${user.role}`);
+            return res.status(403).json({ message: "Role must be 'student'" });
+        }
+        
+        req.user = user;
+        next();
+    });
+};
+
+// --- API Routes ---
+
+// 1. Login
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    db.query('SELECT * FROM Users WHERE username = ? AND password = ?', [username, password], (err, results) => {
+        if (results.length > 0) {
+            const user = { username: results[0].username, role: results[0].role };
+            const accessToken = jwt.sign(user, SECRET_KEY);
+            res.json({ accessToken });
+        } else {
+            res.status(401).send('Username or password incorrect');
+        }
+    });
+});
+
+// 2. Get Profile
+app.get('/api/student/profile', authenticateToken, (req, res) => {
+    db.query('SELECT * FROM Student WHERE username = ?', [req.user.username], (err, results) => {
+        if (err) {
+            console.error("Database Error (Profile):", err); // <--- This logs it to your terminal
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(results[0]);
+    });
+});
+
+// 3. Get Seating
+app.get('/api/student/seating', authenticateToken, (req, res) => {
+    const usernameFromToken = req.user.username;
+    console.log("Fetching seating for username:", usernameFromToken);
+
+    db.query('SELECT * FROM Seating_allocation WHERE username = ?', [usernameFromToken], (err, results) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json(err);
+        }
+        console.log("Database Results Found:", results.length);
+        console.log("Full Results:", results); // See what's actually inside
+        res.json(results);
+    });
+});
 
 /* -------------------------------------------------------------------------- */
 /*                                SERVER START                                */
