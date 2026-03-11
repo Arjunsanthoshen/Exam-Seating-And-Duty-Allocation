@@ -69,3 +69,89 @@
 
 .bold-text { font-weight: 800; color: #1e293b; }
 .empty-msg { padding: 40px; color: #94a3b8; font-style: italic; text-align: center; }
+.action-btn-group {
+    display: flex;
+    width: 100%;
+}
+
+.regen-btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: #f59e0b; /* Amber/Orange color */
+    color: white;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.regen-btn:hover {
+    background: #d97706;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);
+}
+.action-btn-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 10px;
+    /* Removed width: 100% to prevent wrapping issues */
+}
+
+.gen-btn-sm, .regen-btn-sm {
+    width: 280px; /* Increased length significantly */
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: 0.2s;
+    color: white;
+    min-height: 45px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    white-space: nowrap; /* Prevents text from wrapping */
+}
+
+.gen-btn-sm { 
+    background: #3b82f6; 
+}
+
+.gen-btn-sm:hover:not(:disabled) { 
+    background: #2563eb; 
+}
+
+.gen-btn-sm:disabled { 
+    background: #cbd5e0; 
+    cursor: not-allowed; 
+}
+
+.regen-btn-sm { 
+    background: #f59e0b; 
+}
+
+.regen-btn-sm:hover { 
+    background: #d97706; 
+}
+
+.delete-icon-btn {
+    background: #fee2e2;
+    color: #ef4444;
+    border: 1px solid #fecaca;
+    padding: 10px 15px; /* Balanced padding */
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+    min-height: 45px; /* Matches the height of the main buttons */
+}
+
+.delete-icon-btn:hover {
+    background: #ef4444;
+    color: white;
+}
