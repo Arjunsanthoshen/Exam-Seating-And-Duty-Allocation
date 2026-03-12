@@ -883,19 +883,13 @@ app.post('/api/allocation/generate', async (req, res) => {
             }
         }
 
-        const hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, examDate);
-        const totalSeatingPdfBuffer = await generateTotalSeatingPdf(connection, exam_id, examDate, studentRows);
+        const pdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, examDate);
+        const nextReportNumber = await getNextHallWiseReportNumber(connection);
+        const reportName = `hall-wise-report${nextReportNumber}`;
+        const fileName = `${reportName}.pdf`;
+        const filePath = path.join(generatedReportsDir, fileName);
 
-        const nextHallWiseReportNumber = await getNextReportNumber(connection, "hall-wise-report");
-        const hallWiseReportName = `hall-wise-report${nextHallWiseReportNumber}`;
-        const hallWiseFilePath = path.join(generatedReportsDir, `${hallWiseReportName}.pdf`);
-
-        const nextTotalSeatingReportNumber = await getNextReportNumber(connection, "total-seating-report");
-        const totalSeatingReportName = `total-seating-report${nextTotalSeatingReportNumber}`;
-        const totalSeatingFilePath = path.join(generatedReportsDir, `${totalSeatingReportName}.pdf`);
-
-        fs.writeFileSync(hallWiseFilePath, hallWisePdfBuffer);
-        fs.writeFileSync(totalSeatingFilePath, totalSeatingPdfBuffer);
+        fs.writeFileSync(filePath, pdfBuffer);
 
         const [[reportIdRow]] = await connection.query(
             `SELECT COALESCE(MAX(report_id), 0) + 1 AS nextReportId FROM Reports`
@@ -904,20 +898,14 @@ app.post('/api/allocation/generate', async (req, res) => {
         await connection.query(
             `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
              VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId, "Hall-wise", examDate, hallWiseReportName, hallWiseFilePath]
-        );
-
-        await connection.query(
-            `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
-             VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId + 1, "Total Seating", examDate, totalSeatingReportName, totalSeatingFilePath]
+            [reportIdRow.nextReportId, "Hall-wise", examDate, reportName, filePath]
         );
 
         await connection.commit();
 
         res.json({
             message: "Allocation generated successfully",
-            reportName: hallWiseReportName
+            reportName
         });
 
     } catch (error) {
@@ -994,9 +982,7 @@ SELECT
     s.column_no,
     s.bench_no,
     s.seat_position,
-    s.username,
     s.branch,
-    s.batch,
     s.roll_no,
     r.cap_per_bench,
     r.col1,
@@ -1012,157 +998,6 @@ ORDER BY s.block, s.room_no, s.column_no, s.bench_no
 
     const [rows] = await connection.query(query, [examId]);
     return rows;
-}
-
-function formatClassLabel(branch, batch) {
-    return `${String(branch || "").trim()}${String(batch || "").trim()}`;
-}
-
-function formatOrdinal(value) {
-    const number = Number(value);
-
-    if (!Number.isInteger(number) || number <= 0) {
-        return "";
-    }
-
-    const mod100 = number % 100;
-
-    if (mod100 >= 11 && mod100 <= 13) {
-        return `${number}th`;
-    }
-
-    switch (number % 10) {
-        case 1:
-            return `${number}st`;
-        case 2:
-            return `${number}nd`;
-        case 3:
-            return `${number}rd`;
-        default:
-            return `${number}th`;
-    }
-}
-
-function formatHallColumnLabel(username, branch, batch) {
-    const currentYear = new Date().getFullYear();
-    const joinYear = Number(String(username || "").split("_")[0]);
-    const studyYear = currentYear - joinYear;
-    const ordinalYear = formatOrdinal(studyYear);
-    const branchText = String(branch || "").trim();
-    const batchText = String(batch || "").trim();
-
-    return [ordinalYear ? `${ordinalYear} year` : "", branchText, batchText]
-        .filter(Boolean)
-        .join(" ");
-}
-
-function formatRollNumberRanges(rollNumbers) {
-    const uniqueSorted = [...new Set(
-        rollNumbers
-            .map(value => Number(value))
-            .filter(value => Number.isFinite(value))
-    )].sort((a, b) => a - b);
-
-    if (!uniqueSorted.length) {
-        return "";
-    }
-
-    const ranges = [];
-    let start = uniqueSorted[0];
-    let end = uniqueSorted[0];
-
-    for (let index = 1; index < uniqueSorted.length; index++) {
-        const current = uniqueSorted[index];
-
-        if (current === end + 1) {
-            end = current;
-            continue;
-        }
-
-        ranges.push(start === end ? `${start}` : `${start}-${end}`);
-        start = current;
-        end = current;
-    }
-
-    ranges.push(start === end ? `${start}` : `${start}-${end}`);
-    return ranges.join(",");
-}
-
-async function buildTotalSeatingRows(connection, examId, studentRows) {
-    const uniqueClasses = [];
-    const seenClasses = new Set();
-
-    studentRows.forEach(row => {
-        const classKey = formatClassLabel(row.branch, row.batch);
-
-        if (!classKey || seenClasses.has(classKey)) {
-            return;
-        }
-
-        seenClasses.add(classKey);
-        uniqueClasses.push({
-            branch: row.branch,
-            batch: row.batch,
-            classKey
-        });
-    });
-
-    const [allocationRows] = await connection.query(
-        `SELECT branch, batch, roll_no, block, room_no
-         FROM Seating_allocation
-         WHERE exam_id = ?
-         ORDER BY branch ASC, batch ASC, roll_no ASC, block ASC, room_no ASC`,
-        [examId]
-    );
-
-    const allocationsByClass = new Map();
-
-    allocationRows.forEach(row => {
-        const classKey = formatClassLabel(row.branch, row.batch);
-        const hallLabel = `${row.block} ${row.room_no}`;
-
-        if (!allocationsByClass.has(classKey)) {
-            allocationsByClass.set(classKey, new Map());
-        }
-
-        const classHalls = allocationsByClass.get(classKey);
-
-        if (!classHalls.has(hallLabel)) {
-            classHalls.set(hallLabel, []);
-        }
-
-        classHalls.get(hallLabel).push(Number(row.roll_no));
-    });
-
-    const resultRows = [];
-
-    uniqueClasses.forEach(({ classKey }) => {
-        const hallMap = allocationsByClass.get(classKey);
-
-        if (!hallMap || hallMap.size === 0) {
-            return;
-        }
-
-        const hallRows = Array.from(hallMap.entries())
-            .map(([hallNo, rolls]) => {
-                const uniqueSortedRolls = [...new Set(rolls)].sort((a, b) => a - b);
-
-                return {
-                    hallNo,
-                    rollNumbers: formatRollNumberRanges(uniqueSortedRolls),
-                    studentCount: uniqueSortedRolls.length,
-                    firstRoll: uniqueSortedRolls[0] ?? Number.MAX_SAFE_INTEGER
-                };
-            })
-            .sort((a, b) => a.firstRoll - b.firstRoll);
-
-        resultRows.push({
-            classKey,
-            hallRows
-        });
-    });
-
-    return resultRows;
 }
 
 function buildHallSeatingHtml(rows, examDate) {
@@ -1181,13 +1016,8 @@ function buildHallSeatingHtml(rows, examDate) {
                 seats: [],
                 columns: columns,
                 maxRows: maxRows,
-                cap: r.cap_per_bench,
-                columnLabels: {}
+                cap: r.cap_per_bench
             };
-        }
-
-        if (!rooms[key].columnLabels[r.column_no] && (r.username || r.branch || r.batch)) {
-            rooms[key].columnLabels[r.column_no] = formatHallColumnLabel(r.username, r.branch, r.batch);
         }
 
         rooms[key].seats.push(r);
@@ -1224,10 +1054,6 @@ function buildHallSeatingHtml(rows, examDate) {
             border:1px solid black;
             padding:8px;
             width:60px;
-        }
-
-        .empty-cell{
-            background:grey;
         }
 
         .page{
@@ -1269,21 +1095,6 @@ function buildHallSeatingHtml(rows, examDate) {
                 html += `<th colspan="2">${letter}</th>`;
             else
                 html += `<th>${letter}</th>`;
-
-        });
-
-        html += `</tr>`;
-
-        html += `<tr>`;
-
-        rooms[room].columns.forEach((_, index) => {
-
-            const label = rooms[room].columnLabels[index + 1] || "";
-
-            if (rooms[room].cap === 2)
-                html += `<th colspan="2">${label}</th>`;
-            else
-                html += `<th>${label}</th>`;
 
         });
 
@@ -1349,9 +1160,9 @@ function buildHallSeatingHtml(rows, examDate) {
                 if (r > benchCount) {
 
                     if (rooms[room].cap === 2)
-                        html += `<td class="empty-cell"></td><td class="empty-cell"></td>`;
+                        html += `<td style="background:grey"></td><td style="background:grey"></td>`;
                     else
-                        html += `<td class="empty-cell"></td>`;
+                        html += `<td style="background:grey"></td>`;
 
                     return;
                 }
@@ -1360,12 +1171,12 @@ function buildHallSeatingHtml(rows, examDate) {
 
                 if (rooms[room].cap === 2) {
 
-                    html += `<td${seat.left ? "" : ` class="empty-cell"`}>${seat.left || ""}</td>`;
-                    html += `<td${seat.right ? "" : ` class="empty-cell"`}>${seat.right || ""}</td>`;
+                    html += `<td>${seat.left || ""}</td>`;
+                    html += `<td>${seat.right || ""}</td>`;
 
                 } else {
 
-                    html += `<td${seat.left ? "" : ` class="empty-cell"`}>${seat.left || ""}</td>`;
+                    html += `<td>${seat.left || ""}</td>`;
 
                 }
 
@@ -1384,7 +1195,7 @@ function buildHallSeatingHtml(rows, examDate) {
     return html;
 }
 
-async function renderPdfFromHtml(html, options = {}) {
+async function renderPdfFromHtml(html) {
     const browser = await puppeteer.launch({
         headless: "new",
         args: ["--no-sandbox", "--disable-setuid-sandbox"]
@@ -1396,7 +1207,7 @@ async function renderPdfFromHtml(html, options = {}) {
 
         return await page.pdf({
             format: "A4",
-            landscape: Boolean(options.landscape),
+            landscape: true,
             printBackground: true,
             margin: {
                 top: "20px",
@@ -1418,115 +1229,18 @@ async function generateHallSeatingPdfByExamId(connection, examId, examDate) {
     }
 
     const html = buildHallSeatingHtml(rows, examDate);
-    return renderPdfFromHtml(html, { landscape: true });
+    return renderPdfFromHtml(html);
 }
 
-function buildTotalSeatingHtml(rows, examDate) {
-    let html = `
-        <html>
-        <head>
-        <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 24px;
-        }
-
-        .college {
-            font-size: 20px;
-            font-weight: bold;
-        }
-
-        .subtitle {
-            margin-top: 4px;
-            font-size: 16px;
-            font-weight: bold;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 18px;
-            font-size: 14px;
-        }
-
-        th, td {
-            border: 1px solid black;
-            padding: 6px 8px;
-            text-align: center;
-            vertical-align: middle;
-        }
-
-        th {
-            background: #e9e9e9;
-        }
-
-        .class-cell {
-            font-weight: bold;
-        }
-        </style>
-        </head>
-        <body>
-            <div class="college">ST. JOSEPH'S COLLEGE OF ENGINEERING & TECHNOLOGY, PALAI</div>
-            <div class="subtitle">CONSOLIDATED SEATING: ${examDate}</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Batch</th>
-                        <th>Roll Numbers</th>
-                        <th>Number of Students</th>
-                        <th>Hall No</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-
-    rows.forEach(({ classKey, hallRows }) => {
-        hallRows.forEach((row, index) => {
-            html += `<tr>`;
-
-            if (index === 0) {
-                html += `<td class="class-cell" rowspan="${hallRows.length}">${classKey}</td>`;
-            }
-
-            html += `<td>${row.rollNumbers}</td>`;
-            html += `<td>${row.studentCount}</td>`;
-            html += `<td>${row.hallNo}</td>`;
-            html += `</tr>`;
-        });
-    });
-
-    html += `
-                </tbody>
-            </table>
-        </body>
-        </html>
-    `;
-
-    return html;
-}
-
-async function generateTotalSeatingPdf(connection, examId, examDate, studentRows) {
-    const rows = await buildTotalSeatingRows(connection, examId, studentRows);
-
-    if (!rows.length) {
-        throw new Error("No consolidated seating data found");
-    }
-
-    const html = buildTotalSeatingHtml(rows, examDate);
-    return renderPdfFromHtml(html, { landscape: false });
-}
-
-async function getNextReportNumber(connection, prefix) {
+async function getNextHallWiseReportNumber(connection) {
     const [rows] = await connection.query(
         `SELECT report_name
          FROM Reports
-         WHERE report_name LIKE ?`,
-        [`${prefix}%`]
+         WHERE report_name LIKE 'hall-wise-report%'`
     );
 
     const maxNumber = rows.reduce((max, row) => {
-        const match = row.report_name && row.report_name.match(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d+)$`, "i"));
+        const match = row.report_name && row.report_name.match(/hall-wise-report(\d+)$/i);
         if (!match) {
             return max;
         }
