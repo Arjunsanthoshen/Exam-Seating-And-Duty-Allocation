@@ -772,31 +772,42 @@ app.get('/api/student/seating', authenticateToken, (req, res) => {
 // 1. GET: Fetch duty summary
 app.get('/api/duties/summary', (req, res) => {
     let { date, session } = req.query;
-    if (!date || !session) return res.status(400).json({ error: "Missing date or session" });
+    if (!date || !session) return res.status(400).json({ error: "Missing date" });
 
     const formattedDate = new Date(date).toISOString().split('T')[0];
-    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
-    const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
     
-    // Check if duties already exist
-    const checkGeneratedQuery = `SELECT COUNT(*) as dutyCount FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`;
-
+    // Query 1: Get the rooms from seating allocation
+    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
+    
     db.query(roomQuery, [formattedDate, session], (err, roomResults) => {
         if (err) return res.status(500).json(err);
         
+        // UPDATE THESE VARIABLES BASED ON DATABASE RESULTS
         let required = 0;
         let hasAllocation = false;
+
+        if (roomResults.length > 0) {
+            const rooms = JSON.parse(roomResults[0].selected_rooms);
+            required = rooms.length; // Count of rooms = required teachers
+            hasAllocation = true;    // Seating exists, so we can generate duties
+        }
+
+        // Query 2: Get available teachers
+        const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
         db.query(teacherQuery, (err, teacherResults) => {
             if (err) return res.status(500).json(err);
 
+            // Query 3: Check if already generated
+            const checkGeneratedQuery = `SELECT COUNT(*) as dutyCount FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`;
             db.query(checkGeneratedQuery, [formattedDate, session], (err, checkResults) => {
                 if (err) return res.status(500).json(err);
 
+                // Now sending the ACTUAL calculated values
                 res.json({ 
                     required, 
                     available: teacherResults[0].availableCount, 
                     hasAllocation,
-                    isGenerated: checkResults[0].dutyCount > 0 // NEW FLAG
+                    isGenerated: checkResults[0].dutyCount > 0 
                 });
             });
         });
