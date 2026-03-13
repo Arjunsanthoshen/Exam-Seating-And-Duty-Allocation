@@ -943,6 +943,50 @@ app.get('/api/exam-dates-only', (req, res) => {
     });
 });
 
+// 4b. GET: Exam Status Board data (slot-wise seating + duty status)
+app.get('/api/exam-status-board', (req, res) => {
+    const query = `
+        SELECT
+            slots.exam_date,
+            slots.session,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM Seating_allocation sa
+                    JOIN Exam_schedule es2 ON es2.exam_id = sa.exam_id
+                    WHERE es2.exam_date = slots.exam_date
+                      AND es2.session = slots.session
+                ) THEN 1
+                ELSE 0
+            END AS seating_done,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM Duty_allocation da
+                    JOIN Exam_schedule es3 ON es3.exam_id = da.exam_id
+                    WHERE da.exam_date = slots.exam_date
+                      AND es3.session = slots.session
+                ) THEN 1
+                ELSE 0
+            END AS duty_done
+        FROM (
+            SELECT DISTINCT exam_date, session
+            FROM Exam_schedule
+        ) AS slots
+        ORDER BY slots.exam_date ASC,
+                 CASE slots.session
+                    WHEN 'FN' THEN 1
+                    WHEN 'AN' THEN 2
+                    ELSE 3
+                 END ASC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
 // 5. DELETE: Remove duty allocation and RESTORE points
 app.delete('/api/duties/delete', async (req, res) => {
     const { date, session } = req.body;

@@ -15,6 +15,9 @@
   display: flex;
   flex-direction: column;
   align-items: center; /* Centers the widened card */
+  background:
+    radial-gradient(circle at 8% 10%, rgba(255, 255, 255, 0.22), transparent 36%),
+    radial-gradient(circle at 92% 90%, rgba(255, 255, 255, 0.16), transparent 34%);
 }
 
 /* Top Header Bar */
@@ -61,49 +64,198 @@
 .glass-card.full-width-card {
   width: 100%;
   max-width: 1200px; /* Much wider than before */
-  background: white;
-  border-radius: 15px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border-radius: 20px;
   padding: 40px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 16px 40px rgba(24, 58, 104, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(182, 205, 238, 0.85);
   min-height: 60vh;
 }
 
 .card-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
+  width: 100%;
+  background: linear-gradient(135deg, #5a83bb 0%, #416a9f 58%, #355a8c 100%);
+  border-radius: 18px;
+  padding: 16px 20px;
+  box-shadow:
+    0 12px 22px rgba(44, 75, 119, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.card-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .card-header h2 {
-  color: #5b87c4;
-  font-size: 1.5rem;
+  color: #ffffff;
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
   margin: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
 }
 
-.create-exam-btn {
-  background-color: #5b87c4;
-  color: white;
+.card-subtitle {
+  margin: 0;
+  color: #dbe8fb;
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.divider {
   border: none;
-  padding: 12px 30px;
-  border-radius: 30px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s ease;
+  border-top: 1px solid #d8e7fb;
+  margin: 24px 0 20px;
 }
 
-.create-exam-btn:hover {
-  background-color: #4a74b1;
-  transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+.status-table-wrap {
+  overflow-x: auto;
+  border-radius: 20px;
+  border: 1px solid #dbe7f9;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(52, 91, 145, 0.12);
 }
 
-.divider { 
-  border: none;
-  border-top: 1px solid #e2eefc;
-  margin: 25px 0; 
+.status-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-.placeholder-content {
-  color: #888;
+.status-table th,
+.status-table td {
+  padding: 16px 18px;
+  border-bottom: 1px solid #e8eef8;
+  text-align: center;
+}
+
+.status-table th {
+  color: #254b7f;
+  background: linear-gradient(180deg, #eef5ff 0%, #e5f0ff 100%);
+  font-weight: 700;
+  letter-spacing: 0.35px;
+  font-size: 0.95rem;
+  border-bottom: 1px solid #dfe9f8;
+}
+
+.status-table thead th:first-child {
+  border-top-left-radius: 18px;
+}
+
+.status-table thead th:last-child {
+  border-top-right-radius: 18px;
+}
+
+.status-table tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.status-table tbody tr:nth-child(even) {
+  background-color: #fbfdff;
+}
+
+.status-table tbody tr:hover {
+  background-color: #f1f7ff;
+}
+
+.status-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 18px;
+}
+
+.status-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 18px;
+}
+
+.status-table td:first-child {
+  color: #274a79;
+  font-weight: 600;
+}
+
+.status-table td:nth-child(2) {
+  color: #40638f;
+  font-weight: 700;
+}
+
+.status-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 14px rgba(45, 74, 113, 0.2);
+}
+
+.status-icon {
+  font-size: 1.1rem;
+}
+
+.status-badge.done {
+  color: #1f8a44;
+  background: linear-gradient(180deg, #e9f9f0 0%, #d2f2df 100%);
+  border: 1px solid #afe8c5;
+}
+
+.status-badge.not-done {
+  color: #d94848;
+  background: linear-gradient(180deg, #fff0f0 0%, #ffe3e3 100%);
+  border: 1px solid #ffcccc;
+}
+
+.empty-row {
+  color: #7a869a;
   font-style: italic;
+  padding: 24px !important;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: 20px 16px;
+  }
+
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .date-time-box {
+    text-align: left;
+  }
+
+  .current-time {
+    justify-content: flex-start;
+  }
+
+  .glass-card.full-width-card {
+    padding: 24px 16px;
+    min-height: auto;
+  }
+
+  .card-header h2 {
+    font-size: 1.5rem;
+  }
+
+  .card-title-wrap {
+    width: 100%;
+  }
+
+  .status-table th,
+  .status-table td {
+    padding: 12px 10px;
+    font-size: 0.9rem;
+  }
+
+  .status-badge {
+    width: 30px;
+    height: 30px;
+  }
 }

@@ -1,14 +1,29 @@
 import React, { useState, useEffect } from "react";
+import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
-import { FaRegClock } from "react-icons/fa";
+import { FaRegClock, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 import "./ExamStatusBoard.css";
 
 function ExamStatusBoard() {
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [statusRows, setStatusRows] = useState([]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const fetchStatusBoard = async () => {
+      try {
+        const res = await axios.get("http://localhost:5000/api/exam-status-board");
+        setStatusRows(res.data || []);
+      } catch (error) {
+        console.error("Failed to load exam status board", error);
+      }
+    };
+
+    fetchStatusBoard();
   }, []);
 
   const formatDate = (date) => {
@@ -22,6 +37,19 @@ function ExamStatusBoard() {
       hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true 
     }) + " IST";
   };
+
+  const formatExamDate = (dateStr) => {
+    return new Date(dateStr).toLocaleDateString('en-GB');
+  };
+
+  const renderStatus = (done) => (
+    <span
+      className={`status-badge ${done ? "done" : "not-done"}`}
+      title={done ? "Allocation completed" : "Allocation pending"}
+    >
+      {done ? <FaCheckCircle className="status-icon" /> : <FaTimesCircle className="status-icon" />}
+    </span>
+  );
 
   return (
     <div className="dashboard-container">
@@ -43,13 +71,42 @@ function ExamStatusBoard() {
 
         <section className="glass-card full-width-card">
            <div className="card-header">
-              <h2>Exam Status Board</h2>
-              <button className="create-exam-btn">+ Create Exam</button>
+              <div className="card-title-wrap">
+                <h2>Exam Status Board</h2>
+                <p className="card-subtitle">Slot-wise seating and duty completion</p>
+              </div>
            </div>
            <hr className="divider" />
-           
-           <div className="placeholder-content">
-              <p>The dashboard is ready for your exam data integration.</p>
+
+           <div className="status-table-wrap">
+              <table className="status-table">
+                <thead>
+                  <tr>
+                    <th>Exam Date</th>
+                    <th>Session</th>
+                    <th>Seating Status</th>
+                    <th>Duty Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statusRows.length > 0 ? (
+                    statusRows.map((row, index) => (
+                      <tr key={`${row.exam_date}-${row.session}-${index}`}>
+                        <td>{formatExamDate(row.exam_date)}</td>
+                        <td>{row.session}</td>
+                        <td>{renderStatus(Boolean(row.seating_done))}</td>
+                        <td>{renderStatus(Boolean(row.duty_done))}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="4" className="empty-row">
+                        No exams scheduled yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
            </div>
         </section>
       </main>
