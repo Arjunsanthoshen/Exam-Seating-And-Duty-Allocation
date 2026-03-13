@@ -14,6 +14,8 @@ import Signup from "./pages/Signup";
 
 import GenerateDuties from "./pages/Admin/GenerateDuties";
 // import BackButton from "./components/BackButton";
+import StudentProfilePage from "./pages/Student/StudentProfilePage";
+import ExamTimeTable from "./pages/Student/ExamTimeTable";
 
 const Placeholder = ({ title }) => (
   <div style={{ padding: "40px", backgroundColor: "#7ba6dc", minHeight: "100vh", color: "white" }}>
@@ -48,6 +50,8 @@ function App() {
         
         {/* Student Routes */}
         <Route path="/ExamHall" element={<ExamHall />} />
+        <Route path="/StudentProfile" element={<StudentProfilePage />} />
+        <Route path="/ExamTimeTable" element={<ExamTimeTable />} />
       </Routes>
     </BrowserRouter>
   );
