@@ -1,6 +1,7 @@
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
+const jwt = require('jsonwebtoken');
 
 const app = express();
 
@@ -341,24 +342,55 @@ app.delete('/api/exam-schedule/:id', (req, res) => {
 /* LOGIN ROUTES                                */
 /* -------------------------------------------------------------------------- */
 
+// app.post("/api/login", (req, res) => {
+//     const { username, password, role } = req.body;
+
+//     const query = `
+//         SELECT * FROM Users
+//         WHERE username = ? AND password = ? AND role = ?
+//     `;
+
+//     db.query(query, [username, password, role], (err, results) => {
+//         if (err) return res.status(500).json({ message: "Server error" });
+
+//         if (results.length > 0)
+//             res.json({ success: true, role });
+//         else
+//             res.status(401).json({ success: false, message: "Invalid credentials" });
+//     });
+// });
 app.post("/api/login", (req, res) => {
     const { username, password, role } = req.body;
 
     const query = `
-        SELECT * FROM Users
+        SELECT * FROM Users 
         WHERE username = ? AND password = ? AND role = ?
     `;
 
     db.query(query, [username, password, role], (err, results) => {
         if (err) return res.status(500).json({ message: "Server error" });
 
-        if (results.length > 0)
-            res.json({ success: true, role });
-        else
+        if (results.length > 0) {
+            // 1. Create the payload (data to store inside the token)
+            const userPayload = { 
+                username: results[0].username, 
+                role: results[0].role 
+            };
+
+            // 2. Generate the JWT Token
+            const accessToken = jwt.sign(userPayload, SECRET_KEY, { expiresIn: '1h' });
+
+            // 3. Send the token back to the frontend
+            res.json({ 
+                success: true, 
+                accessToken: accessToken, // Frontend needs this!
+                role: results[0].role 
+            });
+        } else {
             res.status(401).json({ success: false, message: "Invalid credentials" });
+        }
     });
 });
-
 
 
 // ----------------------------------------------------------------------------
@@ -654,6 +686,85 @@ app.get('/api/allocation/saved-state', (req, res) => {
 });
 
 
+
+// ----------------------------------------------------------------------------
+//                        Student Portal
+// ----------------------------------------------------------------------------
+
+
+const SECRET_KEY = "your_jwt_secret_key";
+
+// --- JWT Middleware ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        console.log("No token provided");
+        return res.sendStatus(401);
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) {
+            console.log("JWT Verification Error:", err.message);
+            return res.sendStatus(403);
+        }
+        
+        console.log("Logged in user data:", user); // Check if role exists here
+
+        if (user.role !== 'student') {
+            console.log(`Access denied for role: ${user.role}`);
+            return res.status(403).json({ message: "Role must be 'student'" });
+        }
+        
+        req.user = user;
+        next();
+    });
+};
+
+// --- API Routes ---
+
+// 1. Login
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    db.query('SELECT * FROM Users WHERE username = ? AND password = ?', [username, password], (err, results) => {
+        if (results.length > 0) {
+            const user = { username: results[0].username, role: results[0].role };
+            const accessToken = jwt.sign(user, SECRET_KEY);
+            res.json({ accessToken });
+        } else {
+            res.status(401).send('Username or password incorrect');
+        }
+    });
+});
+
+// 2. Get Profile
+app.get('/api/student/profile', authenticateToken, (req, res) => {
+    db.query('SELECT * FROM Student WHERE username = ?', [req.user.username], (err, results) => {
+        if (err) {
+            console.error("Database Error (Profile):", err); // <--- This logs it to your terminal
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(results[0]);
+    });
+});
+
+// 3. Get Seating
+app.get('/api/student/seating', authenticateToken, (req, res) => {
+    const usernameFromToken = req.user.username;
+    console.log("Fetching seating for username:", usernameFromToken);
+
+    db.query('SELECT * FROM Seating_allocation WHERE username = ?', [usernameFromToken], (err, results) => {
+        if (err) {
+            console.error("Database Error:", err);
+            return res.status(500).json(err);
+        }
+        console.log("Database Results Found:", results.length);
+        console.log("Full Results:", results); // See what's actually inside
+        res.json(results);
+    });
+});
+
 /* -------------------------------------------------------------------------- */
 /* FACULTY DUTY ALLOCATION ROUTES                      */
 /* -------------------------------------------------------------------------- */
@@ -661,37 +772,42 @@ app.get('/api/allocation/saved-state', (req, res) => {
 // 1. GET: Fetch duty summary
 app.get('/api/duties/summary', (req, res) => {
     let { date, session } = req.query;
-    if (!date || !session) return res.status(400).json({ error: "Missing date or session" });
+    if (!date || !session) return res.status(400).json({ error: "Missing date" });
 
     const formattedDate = new Date(date).toISOString().split('T')[0];
-    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
-    const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
     
-    // Check if duties already exist
-    const checkGeneratedQuery = `SELECT COUNT(*) as dutyCount FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`;
-
+    // Query 1: Get the rooms from seating allocation
+    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
+    
     db.query(roomQuery, [formattedDate, session], (err, roomResults) => {
         if (err) return res.status(500).json(err);
         
+        // UPDATE THESE VARIABLES BASED ON DATABASE RESULTS
         let required = 0;
         let hasAllocation = false;
 
         if (roomResults.length > 0) {
-            required = JSON.parse(roomResults[0].selected_rooms).length;
-            hasAllocation = true;
+            const rooms = JSON.parse(roomResults[0].selected_rooms);
+            required = rooms.length; // Count of rooms = required teachers
+            hasAllocation = true;    // Seating exists, so we can generate duties
         }
 
+        // Query 2: Get available teachers
+        const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
         db.query(teacherQuery, (err, teacherResults) => {
             if (err) return res.status(500).json(err);
 
+            // Query 3: Check if already generated
+            const checkGeneratedQuery = `SELECT COUNT(*) as dutyCount FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`;
             db.query(checkGeneratedQuery, [formattedDate, session], (err, checkResults) => {
                 if (err) return res.status(500).json(err);
 
+                // Now sending the ACTUAL calculated values
                 res.json({ 
                     required, 
                     available: teacherResults[0].availableCount, 
                     hasAllocation,
-                    isGenerated: checkResults[0].dutyCount > 0 // NEW FLAG
+                    isGenerated: checkResults[0].dutyCount > 0 
                 });
             });
         });
