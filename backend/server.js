@@ -34,6 +34,10 @@ db.getConnection((err, connection) => {
         connection.release(); // VERY IMPORTANT
     }
 });
+
+const recentDutyAssignments = new Map();
+
+const getDutySlotKey = (date, session) => `${date}__${session}`;
 /* -------------------------------------------------------------------------- */
 /* STUDENT MANAGEMENT ROUTES                           */
 /* -------------------------------------------------------------------------- */
@@ -648,6 +652,224 @@ app.get('/api/allocation/saved-state', (req, res) => {
         }
     });
 });
+
+
+/* -------------------------------------------------------------------------- */
+/* FACULTY DUTY ALLOCATION ROUTES                      */
+/* -------------------------------------------------------------------------- */
+
+// 1. GET: Fetch duty summary
+app.get('/api/duties/summary', (req, res) => {
+    let { date, session } = req.query;
+    if (!date || !session) return res.status(400).json({ error: "Missing date or session" });
+
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
+    const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
+    
+    // Check if duties already exist
+    const checkGeneratedQuery = `SELECT COUNT(*) as dutyCount FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`;
+
+    db.query(roomQuery, [formattedDate, session], (err, roomResults) => {
+        if (err) return res.status(500).json(err);
+        
+        let required = 0;
+        let hasAllocation = false;
+
+        if (roomResults.length > 0) {
+            required = JSON.parse(roomResults[0].selected_rooms).length;
+            hasAllocation = true;
+        }
+
+        db.query(teacherQuery, (err, teacherResults) => {
+            if (err) return res.status(500).json(err);
+
+            db.query(checkGeneratedQuery, [formattedDate, session], (err, checkResults) => {
+                if (err) return res.status(500).json(err);
+
+                res.json({ 
+                    required, 
+                    available: teacherResults[0].availableCount, 
+                    hasAllocation,
+                    isGenerated: checkResults[0].dutyCount > 0 // NEW FLAG
+                });
+            });
+        });
+    });
+});
+
+// 2. POST: Generate Duties with Fair Workload Balancing
+app.post('/api/duties/generate', async (req, res) => {
+    const { date, session } = req.body;
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+    const slotKey = getDutySlotKey(formattedDate, session);
+
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // A. Verify Exam Schedule exists
+        const [exams] = await connection.query(
+            `SELECT exam_id FROM Exam_schedule WHERE exam_date = ? AND session = ? LIMIT 1`, 
+            [formattedDate, session]
+        );
+        if (!exams.length) throw new Error("No Exam Schedule found for this slot.");
+        const exam_id = exams[0].exam_id;
+
+        // B. Get the list of rooms allocated for this exam
+        const [alloc] = await connection.query(
+            `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`, 
+            [formattedDate, session]
+        );
+        if (!alloc.length) throw new Error("No Seating Allocation found. Please generate seating first.");
+        const selectedRooms = JSON.parse(alloc[0].selected_rooms);
+
+        // C. WORKLOAD RESTORE: If re-generating, give points back to previously assigned teachers
+        const [prevDuties] = await connection.query(
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
+            [formattedDate, exam_id]
+        );
+        const previousUsernames = prevDuties.map(d => d.Tusername);
+        if (prevDuties.length > 0) {
+            await connection.query(
+                `UPDATE Teacher SET duty_count = duty_count + 1 WHERE username IN (?)`,
+                [previousUsernames]
+            );
+            await connection.query(
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
+                [formattedDate, exam_id]
+            );
+        }
+
+        // D. Pick teachers by workload priority and randomize inside the same workload band.
+        const [teachers] = await connection.query(
+            `SELECT username FROM Teacher 
+             WHERE UPPER(availability) = 'YES' AND duty_count > 0 
+             ORDER BY duty_count DESC, RAND()`
+        );
+
+        if (teachers.length < selectedRooms.length) {
+            throw new Error(`Staff Shortage: Need ${selectedRooms.length}, but only have ${teachers.length} available.`);
+        }
+
+        const recentUsernames = previousUsernames.length
+            ? previousUsernames
+            : (recentDutyAssignments.get(slotKey) || []);
+
+        let teacherPool = teachers;
+        if (recentUsernames.length > 0) {
+            const recentSet = new Set(recentUsernames);
+            const freshTeachers = teachers.filter(teacher => !recentSet.has(teacher.username));
+            if (freshTeachers.length >= selectedRooms.length) {
+                teacherPool = freshTeachers;
+            }
+        }
+
+        // E. Map teachers to rooms and prepare for bulk insert
+        const assignedUsernames = [];
+        const dutyValues = selectedRooms.map((roomFull, index) => {
+            const block = roomFull.match(/[A-Za-z]+/)[0];
+            const room_no = roomFull.match(/\d+/)[0];
+            const tUser = teacherPool[index].username;
+            assignedUsernames.push(tUser);
+            return [exam_id, room_no, block, tUser, formattedDate];
+        });
+
+        // F. Finalize: Save assignments and decrement duty points
+        await connection.query(
+            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date) VALUES ?`,
+            [dutyValues]
+        );
+
+        await connection.query(
+            `UPDATE Teacher SET duty_count = duty_count - 1 WHERE username IN (?)`,
+            [assignedUsernames]
+        );
+
+        await connection.commit();
+        recentDutyAssignments.set(slotKey, assignedUsernames);
+        res.json({ message: "Duties generated successfully with workload balancing." });
+
+    } catch (err) {
+        await connection.rollback();
+        res.status(500).json({ message: err.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// 3. GET: Fetch the assigned duty list for the table
+app.get('/api/duties/list', (req, res) => {
+    const { date, session } = req.query;
+    if (!date) return res.status(400).json({ error: "Date is required" });
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+
+    const query = `
+        SELECT d.room_no, d.block, d.Tusername, t.name as teacher_name
+        FROM Duty_allocation d
+        JOIN Teacher t ON d.Tusername = t.username
+        JOIN Exam_schedule e ON d.exam_id = e.exam_id
+        WHERE d.exam_date = ? AND e.session = ?
+        ORDER BY d.block ASC, d.room_no ASC
+    `;
+    db.query(query, [formattedDate, session], (err, results) => {
+        if (err) return res.status(500).json(err);
+        res.json(results);
+    });
+});
+
+// 4. GET: Helper for Calendar highlighting (Unique Exam Dates)
+app.get('/api/exam-dates-only', (req, res) => {
+    const query = 'SELECT DISTINCT exam_date FROM Exam_schedule ORDER BY exam_date ASC';
+    db.query(query, (err, results) => {
+        if (err) return res.status(500).json(err);
+        res.json(results);
+    });
+});
+
+// 5. DELETE: Remove duty allocation and RESTORE points
+app.delete('/api/duties/delete', async (req, res) => {
+    const { date, session } = req.body;
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+    const slotKey = getDutySlotKey(formattedDate, session);
+
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Find teachers assigned to this specific slot
+        const [prevDuties] = await connection.query(
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
+            [formattedDate, session]
+        );
+
+        if (prevDuties.length > 0) {
+            const usernames = prevDuties.map(d => d.Tusername);
+            recentDutyAssignments.set(slotKey, usernames);
+            
+            // 1. Give points back
+            await connection.query(
+                `UPDATE Teacher SET duty_count = duty_count + 1 WHERE username IN (?)`,
+                [usernames]
+            );
+
+            // 2. Delete the actual duties
+            await connection.query(
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
+                [formattedDate, session]
+            );
+        }
+
+        await connection.commit();
+        res.json({ message: "Allocation deleted and faculty points restored." });
+    } catch (err) {
+        await connection.rollback();
+        res.status(500).json({ message: err.message });
+    } finally {
+        connection.release();
+    }
+});
+
 
 /* -------------------------------------------------------------------------- */
 /* SERVER START                                */

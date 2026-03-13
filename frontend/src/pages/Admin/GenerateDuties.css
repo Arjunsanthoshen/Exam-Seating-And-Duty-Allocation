@@ -1,0 +1,157 @@
+.duty-header-grid {
+  display: flex;
+  gap: 30px;
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 15px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 30px;
+  align-items: center;
+}
+
+/* Calendar Widget - Extra Small & Clean */
+.cal-widget {
+  width: 240px;
+  background: white;
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cal-nav span { font-weight: 800; font-size: 0.85rem; color: #1e293b; width: 80px; text-align: center; }
+
+.cal-nav button { background: none; border: none; cursor: pointer; color: #64748b; font-size: 0.75rem; padding: 5px; transition: 0.2s; }
+.cal-nav button:hover { color: #3b82f6; }
+
+.v-divider { width: 1px; height: 20px; background: #e2e8f0; margin: 0 5px; }
+
+.step-group { display: flex; flex-direction: column; }
+
+.cal-week { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 0.65rem; font-weight: 900; color: #94a3b8; margin-bottom: 8px; }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+
+.cal-day { height: 28px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; color: #cbd5e0; border-radius: 6px; transition: 0.2s; }
+
+.exam-day { color: #3b82f6; background: #eff6ff; cursor: pointer; font-weight: 800; }
+.exam-day:hover { background: #dbeafe; }
+
+.active-day { background: #3b82f6 !important; color: white !important; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.4); }
+
+/* Form Area */
+.duty-form { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+
+.selection-status { display: flex; justify-content: space-between; align-items: center; }
+
+.date-label { font-size: 0.95rem; color: #475569; }
+.date-label strong { color: #1e293b; margin-left: 5px; text-decoration: underline #3b82f6; }
+
+.session-toggle { display: flex; background: #e2e8f0; padding: 4px; border-radius: 8px; }
+.session-toggle button { border: none; padding: 6px 15px; border-radius: 6px; font-weight: 700; cursor: pointer; background: none; color: #64748b; }
+.session-toggle button.active { background: white; color: #3b82f6; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+.summary-pills { display: flex; gap: 10px; }
+.pill { background: white; border: 1px solid #e2e8f0; padding: 8px 15px; border-radius: 20px; font-size: 0.85rem; font-weight: 700; color: #64748b; }
+.pill span { color: #3b82f6; margin-left: 4px; }
+.danger { color: #ef4444 !important; }
+.success { color: #10b981 !important; }
+
+.gen-btn { padding: 12px; border: none; border-radius: 10px; background: #3b82f6; color: white; font-weight: 800; cursor: pointer; transition: 0.3s; }
+.gen-btn:hover:not(:disabled) { background: #2563eb; transform: translateY(-2px); }
+.gen-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+
+.bold-text { font-weight: 800; color: #1e293b; }
+.empty-msg { padding: 40px; color: #94a3b8; font-style: italic; text-align: center; }
+.action-btn-group {
+    display: flex;
+    width: 100%;
+}
+
+.regen-btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: #f59e0b; /* Amber/Orange color */
+    color: white;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.regen-btn:hover {
+    background: #d97706;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);
+}
+.action-btn-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 10px;
+    /* Removed width: 100% to prevent wrapping issues */
+}
+
+.gen-btn-sm, .regen-btn-sm {
+    width: 280px; /* Increased length significantly */
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: 0.2s;
+    color: white;
+    min-height: 45px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    white-space: nowrap; /* Prevents text from wrapping */
+}
+
+.gen-btn-sm { 
+    background: #3b82f6; 
+}
+
+.gen-btn-sm:hover:not(:disabled) { 
+    background: #2563eb; 
+}
+
+.gen-btn-sm:disabled { 
+    background: #cbd5e0; 
+    cursor: not-allowed; 
+}
+
+.regen-btn-sm { 
+    background: #f59e0b; 
+}
+
+.regen-btn-sm:hover { 
+    background: #d97706; 
+}
+
+.delete-icon-btn {
+    background: #fee2e2;
+    color: #ef4444;
+    border: 1px solid #fecaca;
+    padding: 10px 15px; /* Balanced padding */
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+    min-height: 45px; /* Matches the height of the main buttons */
+}
+
+.delete-icon-btn:hover {
+    background: #ef4444;
+    color: white;
+}
