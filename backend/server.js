@@ -1785,8 +1785,6 @@ app.get("/api/reports/hall-seating/:date", async (req, res) => {
 // ----------------------------------------------------------------------------
 
 
-const SECRET_KEY = "your_jwt_secret_key";
-
 // --- JWT Middleware ---
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
