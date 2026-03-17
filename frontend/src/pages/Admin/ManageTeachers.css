@@ -63,6 +63,20 @@
   background:#355a8a;
 }
 
+.btn-secondary {
+  background: #eef4ff;
+  color: #355a8a;
+  border: 1px solid #9fb8df;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #dde9ff;
+}
+
 .search-box {
   padding: 10px;
   border-radius: 8px;
@@ -141,6 +155,15 @@ td {
   flex-direction: column;
   align-items: center;
   gap:12px;
+}
+
+.template-note {
+  max-width: 420px;
+  margin: 0;
+  color: #4f5f75;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .upload-area{

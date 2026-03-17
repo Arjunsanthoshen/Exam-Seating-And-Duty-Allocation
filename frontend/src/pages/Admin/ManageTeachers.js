@@ -69,7 +69,7 @@ const handleFileChange = (e) => {
   fetchTeachers();
 };
 
-const handleExcelUpload = async () => {
+  const handleExcelUpload = async () => {
 
   if (!excelFile) {
     alert("Please select an Excel file");
@@ -89,6 +89,10 @@ const handleExcelUpload = async () => {
   alert(data.message);
 
   fetchTeachers();
+};
+
+const handleDownloadTemplate = () => {
+  window.open("http://localhost:5000/api/teachers/template", "_blank");
 };
 
   const handleAvailabilityChange = async (username, availability) => {
@@ -131,6 +135,17 @@ const handleExcelUpload = async () => {
 
 {/* Excel Upload Section */}
 <div className="excel-upload-box">
+  <button
+    type="button"
+    className="btn-secondary"
+    onClick={handleDownloadTemplate}
+  >
+    Download Teacher Template
+  </button>
+
+  <p className="template-note">
+    Fill the downloaded file and upload the same sheet here. Required column order: username, name, department, phone.
+  </p>
 
   <input
     type="file"

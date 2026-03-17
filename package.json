@@ -1,9 +1,6 @@
 {
   "dependencies": {
-<<<<<<< HEAD
     "bcrypt": "^6.0.0",
-=======
->>>>>>> 785a51a9fa50f69c01fc4b871b1a299291c794ab
     "jsonwebtoken": "^9.0.3"
   }
 }

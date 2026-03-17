@@ -109,22 +109,26 @@ function Login() {
       const res = await fetch("http://localhost:5000/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, role })
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+          role: role.trim()
+        })
       });
 
       const data = await res.json();
+      const issuedToken = data.token || data.accessToken;
 
-      if (res.ok && data.success) {
-        // --- KEY CHANGE START ---
-        // 1. Store the JWT token in LocalStorage
-        if (data.accessToken) {
-          localStorage.setItem("token", data.accessToken);
+      if (res.ok && (data.success || issuedToken)) {
+        if (issuedToken) {
+          localStorage.setItem("token", issuedToken);
+          localStorage.setItem("role", data.role || role.trim());
+          localStorage.setItem("username", username.trim());
         } else {
           console.error("No token received from server");
         }
-        // --- KEY CHANGE END ---
 
-        const userRole = data.role.toLowerCase();
+        const userRole = String(data.role || role).toLowerCase();
 
         // Navigate based on role
         if (userRole === "admin") navigate("/ExamStatusBoard");

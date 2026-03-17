@@ -77,6 +77,67 @@ const recentDutyAssignments = new Map();
 
 function getDutySlotKey(date, session) {
     return `${date}_${session}`;}
+
+function verifyRequestToken(req, res, expectedRole) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        res.status(401).json({ message: "No token provided" });
+        return null;
+    }
+
+    try {
+        const user = jwt.verify(token, SECRET_KEY);
+
+        if (expectedRole && String(user.role || '').toLowerCase() !== String(expectedRole).toLowerCase()) {
+            res.status(403).json({ message: `Role must be '${expectedRole}'` });
+            return null;
+        }
+
+        return user;
+    } catch (error) {
+        res.status(403).json({ message: "Invalid token" });
+        return null;
+    }
+}
+
+async function ensureRequestTables() {
+    await db.promise().query(`
+        CREATE TABLE IF NOT EXISTS teacher_unavailability (
+            unavailability_id INT NOT NULL AUTO_INCREMENT,
+            Tusername VARCHAR(255) NOT NULL,
+            exam_date DATE NOT NULL,
+            session VARCHAR(20) NOT NULL,
+            reason TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (unavailability_id)
+        )
+    `);
+
+    await db.promise().query(`
+        ALTER TABLE teacher_unavailability
+        MODIFY unavailability_id INT NOT NULL AUTO_INCREMENT
+    `);
+
+    await db.promise().query(`
+        CREATE TABLE IF NOT EXISTS admin_request_state (
+            state_id INT NOT NULL,
+            last_seen_unavailability_id INT NOT NULL DEFAULT 0,
+            PRIMARY KEY (state_id)
+        )
+    `);
+
+    await db.promise().query(`
+        INSERT IGNORE INTO admin_request_state (state_id, last_seen_unavailability_id)
+        VALUES (1, 0)
+    `);
+}
+
+ensureRequestTables().catch((error) => {
+    console.error("Failed to ensure request tables on startup:", error);
+});
+
 /* -------------------------------------------------------------------------- */
 /*                        STUDENT MANAGEMENT ROUTES                           */
 /* -------------------------------------------------------------------------- */
@@ -308,6 +369,16 @@ app.put('/api/teachers/availability', (req, res) => {
 /*                         TEACHER EXCEL UPLOAD ROUTE                         */
 /* -------------------------------------------------------------------------- */
 
+app.get("/api/teachers/template", (req, res) => {
+    const templatePath = path.join(__dirname, "teacher_template1.xlsx");
+
+    if (!fs.existsSync(templatePath)) {
+        return res.status(404).json({ message: "Teacher template file not found" });
+    }
+
+    return res.download(templatePath, "teacher_template1.xlsx");
+});
+
 app.post("/api/teachers/upload-excel", upload.single("file"), async (req, res) => {
 
     console.log("Excel upload request received");
@@ -340,7 +411,7 @@ app.post("/api/teachers/upload-excel", upload.single("file"), async (req, res) =
         let processedCount = 0;
         const role = "Teacher";
         const availability = "Yes";
-        const hashedDefaultPassword = await bcrypt.hash("sjcet", 10);
+        const hashedDefaultPassword = await bcrypt.hash("pass123", 10);
 
         const hasHeader = rows.length > 0 && (
             String(rows[0][0] || "").trim().toLowerCase() === "user_name" ||
@@ -563,11 +634,18 @@ app.delete('/api/exam-schedule/:id', (req, res) => {
 
 app.post("/api/login", (req, res) => {
 
-    const { username, password, role } = req.body;
+    const usernameInput = String(req.body.username || "");
+    const passwordInput = String(req.body.password || "");
+    const roleInput = String(req.body.role || "");
+
+    const username = usernameInput.trim();
+    const role = roleInput.trim();
 
     const query = `
         SELECT * FROM Users
-        WHERE username = ? AND role = ?
+        WHERE LOWER(TRIM(username)) = LOWER(?)
+          AND LOWER(TRIM(role)) = LOWER(?)
+        LIMIT 1
     `;
 
     db.query(query, [username, role], async (err, results) => {
@@ -581,15 +659,18 @@ app.post("/api/login", (req, res) => {
         const user = results[0];
 
         let match = false;
-        const storedPassword = String(user.password || "");
+        const storedPassword = String(user.password || "").trim();
 
         if (BCRYPT_HASH_PREFIX.test(storedPassword)) {
-            match = await bcrypt.compare(password, storedPassword);
-        } else if (password === storedPassword) {
+            match = await bcrypt.compare(passwordInput, storedPassword);
+        } else if (
+            passwordInput === storedPassword ||
+            passwordInput.trim() === storedPassword
+        ) {
             match = true;
 
             try {
-                const hashedPassword = await bcrypt.hash(password, 10);
+                const hashedPassword = await bcrypt.hash(passwordInput, 10);
                 await db.promise().query(
                     "UPDATE Users SET password = ? WHERE username = ? AND role = ?",
                     [hashedPassword, user.username, user.role]
@@ -616,6 +697,71 @@ app.post("/api/login", (req, res) => {
 
     });
 
+});
+
+app.post("/api/teacher/change-password", async (req, res) => {
+    const user = verifyRequestToken(req, res, "teacher");
+    if (!user) {
+        return;
+    }
+
+    const currentPassword = String(req.body.currentPassword || "");
+    const newPassword = String(req.body.newPassword || "");
+    const confirmPassword = String(req.body.confirmPassword || "");
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        return res.status(400).json({ message: "All password fields are required" });
+    }
+
+    if (newPassword !== confirmPassword) {
+        return res.status(400).json({ message: "New password and retyped password do not match" });
+    }
+
+    try {
+        const [results] = await db.promise().query(
+            `SELECT username, role, password
+             FROM Users
+             WHERE LOWER(TRIM(username)) = LOWER(?)
+               AND LOWER(TRIM(role)) = 'teacher'
+             LIMIT 1`,
+            [String(user.username || "").trim()]
+        );
+
+        if (!results.length) {
+            return res.status(404).json({ message: "Teacher account not found" });
+        }
+
+        const teacherUser = results[0];
+        const storedPassword = String(teacherUser.password || "").trim();
+
+        let currentPasswordMatches = false;
+
+        if (BCRYPT_HASH_PREFIX.test(storedPassword)) {
+            currentPasswordMatches = await bcrypt.compare(currentPassword, storedPassword);
+        } else if (
+            currentPassword === storedPassword ||
+            currentPassword.trim() === storedPassword
+        ) {
+            currentPasswordMatches = true;
+        }
+
+        if (!currentPasswordMatches) {
+            return res.status(401).json({ message: "Current password is incorrect" });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.promise().query(
+            `UPDATE Users
+             SET password = ?
+             WHERE username = ? AND role = ?`,
+            [hashedPassword, teacherUser.username, teacherUser.role]
+        );
+
+        return res.json({ message: "Password changed successfully" });
+    } catch (error) {
+        console.error("Failed to change teacher password:", error);
+        return res.status(500).json({ message: "Failed to change password" });
+    }
 });
 
 app.post("/api/signup", async (req, res) => {
@@ -1815,20 +1961,6 @@ const authenticateToken = (req, res, next) => {
 
 // --- API Routes ---
 
-// 1. Login
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    db.query('SELECT * FROM Users WHERE username = ? AND password = ?', [username, password], (err, results) => {
-        if (results.length > 0) {
-            const user = { username: results[0].username, role: results[0].role };
-            const accessToken = jwt.sign(user, SECRET_KEY);
-            res.json({ accessToken });
-        } else {
-            res.status(401).send('Username or password incorrect');
-        }
-    });
-});
-
 // 2. Get Profile
 app.get('/api/student/profile', authenticateToken, (req, res) => {
     db.query('SELECT * FROM Student WHERE username = ?', [req.user.username], (err, results) => {
@@ -1854,6 +1986,246 @@ app.get('/api/student/seating', authenticateToken, (req, res) => {
         console.log("Full Results:", results); // See what's actually inside
         res.json(results);
     });
+});
+
+app.get('/api/teacher/dashboard', (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ message: 'No token provided' });
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) {
+            return res.status(403).json({ message: 'Invalid token' });
+        }
+
+        if (String(user.role || '').toLowerCase() !== 'teacher') {
+            return res.status(403).json({ message: "Role must be 'teacher'" });
+        }
+
+        const teacherQuery = `
+            SELECT username, name
+            FROM Teacher
+            WHERE username = ?
+            LIMIT 1
+        `;
+
+        const dutyQuery = `
+            SELECT 
+                d.exam_date,
+                e.session,
+                CONCAT(d.block, d.room_no) AS exam_hall
+            FROM Duty_allocation d
+            JOIN Exam_schedule e ON e.exam_id = d.exam_id
+            WHERE d.Tusername = ?
+            ORDER BY d.exam_date ASC,
+                     FIELD(e.session, 'FN', 'AN', 'Both'),
+                     d.block ASC,
+                     d.room_no ASC
+        `;
+
+        db.query(teacherQuery, [user.username], (teacherErr, teacherResults) => {
+            if (teacherErr) {
+                console.error('Teacher lookup failed:', teacherErr);
+                return res.status(500).json({ message: 'Failed to fetch teacher details' });
+            }
+
+            if (!teacherResults.length) {
+                return res.status(404).json({ message: 'Teacher not found' });
+            }
+
+            db.query(dutyQuery, [user.username], (dutyErr, dutyResults) => {
+                if (dutyErr) {
+                    console.error('Teacher duties lookup failed:', dutyErr);
+                    return res.status(500).json({ message: 'Failed to fetch duty schedule' });
+                }
+
+                return res.json({
+                    teacher: teacherResults[0],
+                    duties: dutyResults
+                });
+            });
+        });
+    });
+});
+
+app.post('/api/teacher/unavailability', (req, res) => {
+    const user = verifyRequestToken(req, res, 'teacher');
+
+    if (!user) {
+        return;
+    }
+
+    const examDate = String(req.body.examDate || '').trim();
+    const session = String(req.body.session || '').trim();
+    const reason = String(req.body.reason || '').trim();
+    const reasonWordCount = reason ? reason.split(/\s+/).filter(Boolean).length : 0;
+
+    if (!examDate || !session || !reason) {
+        return res.status(400).json({ message: 'Exam date, session, and reason are required.' });
+    }
+
+    if (!['FN', 'AN', 'Both'].includes(session)) {
+        return res.status(400).json({ message: 'Invalid session selected.' });
+    }
+
+    if (reasonWordCount > 40) {
+        return res.status(400).json({ message: 'Reason too long make it shorter' });
+    }
+
+    ensureRequestTables().then(() => {
+        db.query(
+            `INSERT INTO teacher_unavailability (Tusername, exam_date, session, reason)
+             VALUES (?, ?, ?, ?)`,
+            [user.username, examDate, session, reason],
+            (err, result) => {
+                if (err) {
+                    console.error('Failed to save teacher unavailability:', err);
+                    return res.status(500).json({ message: 'Failed to save unavailability request.' });
+                }
+
+                return res.json({
+                    message: 'Unavailability request submitted successfully.',
+                    unavailabilityId: result.insertId
+                });
+            }
+        );
+    }).catch((error) => {
+        console.error('Failed to prepare teacher unavailability tables:', error);
+        return res.status(500).json({ message: 'Failed to prepare unavailability storage.' });
+    });
+});
+
+app.get('/api/admin/requests/unread-count', async (req, res) => {
+    try {
+        await ensureRequestTables();
+
+        const [[stateRow]] = await db.promise().query(
+            `SELECT last_seen_unavailability_id
+             FROM admin_request_state
+             WHERE state_id = 1`
+        );
+
+        const lastSeenId = Number(stateRow?.last_seen_unavailability_id || 0);
+        const [[countRow]] = await db.promise().query(
+            `SELECT COUNT(*) AS unreadCount
+             FROM teacher_unavailability
+             WHERE unavailability_id > ?`,
+            [lastSeenId]
+        );
+
+        res.json({ unreadCount: Number(countRow.unreadCount || 0) });
+    } catch (error) {
+        console.error('Failed to fetch unread request count:', error);
+        res.status(500).json({ message: 'Failed to fetch unread request count.' });
+    }
+});
+
+app.post('/api/admin/requests/mark-read', async (req, res) => {
+    try {
+        await ensureRequestTables();
+
+        const [[maxRow]] = await db.promise().query(
+            `SELECT COALESCE(MAX(unavailability_id), 0) AS maxId
+             FROM teacher_unavailability`
+        );
+
+        await db.promise().query(
+            `UPDATE admin_request_state
+             SET last_seen_unavailability_id = ?
+             WHERE state_id = 1`,
+            [Number(maxRow.maxId || 0)]
+        );
+
+        res.json({ message: 'Requests marked as read.' });
+    } catch (error) {
+        console.error('Failed to mark requests as read:', error);
+        res.status(500).json({ message: 'Failed to mark requests as read.' });
+    }
+});
+
+app.get('/api/admin/requests', (req, res) => {
+    ensureRequestTables().then(() => {
+        db.query(
+            `SELECT
+                tu.unavailability_id,
+                tu.Tusername,
+                t.name AS teacher_name,
+                t.availability,
+                tu.exam_date,
+                tu.session,
+                tu.reason
+             FROM teacher_unavailability tu
+             LEFT JOIN Teacher t ON t.username = tu.Tusername
+             ORDER BY tu.unavailability_id DESC`,
+            (err, results) => {
+                if (err) {
+                    console.error('Failed to fetch admin requests:', err);
+                    return res.status(500).json({ message: 'Failed to fetch requests.' });
+                }
+
+                return res.json(results);
+            }
+        );
+    }).catch((error) => {
+        console.error('Failed to prepare admin request tables:', error);
+        return res.status(500).json({ message: 'Failed to prepare requests data.' });
+    });
+});
+
+app.post('/api/admin/requests/:id/decision', async (req, res) => {
+    try {
+        await ensureRequestTables();
+
+        const requestId = Number(req.params.id);
+        const decision = String(req.body.decision || '').trim().toLowerCase();
+
+        if (!Number.isInteger(requestId) || requestId <= 0) {
+            return res.status(400).json({ message: 'Invalid request id.' });
+        }
+
+        if (!['accept', 'reject'].includes(decision)) {
+            return res.status(400).json({ message: 'Invalid decision.' });
+        }
+
+        const [[requestRow]] = await db.promise().query(
+            `SELECT Tusername
+             FROM teacher_unavailability
+             WHERE unavailability_id = ?`,
+            [requestId]
+        );
+
+        if (!requestRow) {
+            return res.status(404).json({ message: 'Request not found.' });
+        }
+
+        const updatedAvailability = decision === 'accept' ? 'No' : 'Yes';
+
+        await db.promise().query(
+            `UPDATE Teacher
+             SET availability = ?
+             WHERE username = ?`,
+            [updatedAvailability, requestRow.Tusername]
+        );
+
+        await db.promise().query(
+            `DELETE FROM teacher_unavailability
+             WHERE unavailability_id = ?`,
+            [requestId]
+        );
+
+        return res.json({
+            message: `Teacher availability updated to ${updatedAvailability}.`,
+            availability: updatedAvailability,
+            username: requestRow.Tusername,
+            removedRequestId: requestId
+        });
+    } catch (error) {
+        console.error('Failed to update request decision:', error);
+        return res.status(500).json({ message: 'Failed to update teacher availability.' });
+    }
 });
 
 
