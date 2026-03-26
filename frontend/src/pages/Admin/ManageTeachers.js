@@ -6,6 +6,7 @@ const ManageTeachers = () => {
 
   const [teachers, setTeachers] = useState([]);
   const [search, setSearch] = useState("");
+  const [excelFile, setExcelFile] = useState(null);
 
   const [form, setForm] = useState({
     username: "",
@@ -27,8 +28,12 @@ const ManageTeachers = () => {
   };
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  setForm({ ...form, [e.target.name]: e.target.value });
+};
+
+const handleFileChange = (e) => {
+  setExcelFile(e.target.files[0]);
+};
 
   const handleAddTeacher = async (e) => {
     e.preventDefault();
@@ -55,14 +60,40 @@ const ManageTeachers = () => {
   };
 
   const handleDelete = async (username) => {
-    if (!window.confirm("Delete this teacher?")) return;
+  if (!window.confirm("Delete this teacher?")) return;
 
-    await fetch(`http://localhost:5000/api/teachers/${username}`, {
-      method: "DELETE"
-    });
+  await fetch(`http://localhost:5000/api/teachers/${username}`, {
+    method: "DELETE"
+  });
 
-    fetchTeachers();
-  };
+  fetchTeachers();
+};
+
+  const handleExcelUpload = async () => {
+
+  if (!excelFile) {
+    alert("Please select an Excel file");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", excelFile);
+
+  const res = await fetch("http://localhost:5000/api/teachers/upload-excel", {
+  method: "POST",
+  body: formData
+});
+
+  const data = await res.json();
+
+  alert(data.message);
+
+  fetchTeachers();
+};
+
+const handleDownloadTemplate = () => {
+  window.open("http://localhost:5000/api/teachers/template", "_blank");
+};
 
   const handleAvailabilityChange = async (username, availability) => {
     await fetch("http://localhost:5000/api/teachers/availability", {
@@ -92,16 +123,66 @@ const ManageTeachers = () => {
         <div className="card">
           <div className="card-header">Add Teacher</div>
 
-          <form onSubmit={handleAddTeacher} className="add-form">
-            <input type="text" name="name" placeholder="Teacher Name" value={form.name} onChange={handleChange} required />
-            <input type="text" name="username" placeholder="Username" value={form.username} onChange={handleChange} required />
-            <input type="password" name="password" placeholder="Password" value={form.password} onChange={handleChange} required />
-            <input type="text" name="department" placeholder="Department" value={form.department} onChange={handleChange} required />
-            <input type="text" name="phone" placeholder="Phone" value={form.phone} onChange={handleChange} required />
+         <form onSubmit={handleAddTeacher} className="add-form">
+  <input type="text" name="name" placeholder="Teacher Name" value={form.name} onChange={handleChange} required />
+  <input type="text" name="username" placeholder="Username" value={form.username} onChange={handleChange} required />
+  <input type="password" name="password" placeholder="Password" value={form.password} onChange={handleChange} required />
+  <input type="text" name="department" placeholder="Department" value={form.department} onChange={handleChange} required />
+  <input type="text" name="phone" placeholder="Phone" value={form.phone} onChange={handleChange} required />
 
-            <button type="submit" className="btn-primary">Add Teacher</button>
-          </form>
-        </div>
+  <button type="submit" className="btn-primary">Add Teacher</button>
+</form>
+
+{/* Excel Upload Section */}
+<div className="excel-upload-box">
+  <button
+    type="button"
+    className="btn-secondary"
+    onClick={handleDownloadTemplate}
+  >
+    Download Teacher Template
+  </button>
+
+  <p className="template-note">
+    Download the template, fill it, and upload the completed excel file.
+  </p>
+
+  <input
+    type="file"
+    accept=".xlsx,.xls"
+    id="excelUpload"
+    onChange={handleFileChange}
+    hidden
+  />
+
+  <label htmlFor="excelUpload" className="upload-area">
+
+    <div className="upload-content">
+      <p className="upload-title">Upload Teachers Excel</p>
+      <p className="upload-subtitle">Click to select an Excel file</p>
+
+      <p className="file-selected">
+        {excelFile ? excelFile.name : "No file selected"}
+      </p>
+    </div>
+
+  </label>
+
+  {excelFile && (
+<button
+  type="button"
+  className="btn-primary excel-submit"
+  onClick={() => {
+    console.log("Submit Excel clicked");
+    handleExcelUpload();
+  }}
+>
+  Submit Excel
+</button>
+  )}
+
+</div>
+   </div>
 
         {/* Search */}
         <input
@@ -115,47 +196,48 @@ const ManageTeachers = () => {
         <div className="table-card">
           <div className="table-header">Teacher Table</div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Department</th>
-                <th>Phone</th>
-                <th>Availability</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredTeachers.map((teacher) => (
-                <tr key={teacher.username}>
-                  <td>{teacher.name}</td>
-                  <td>{teacher.department}</td>
-                  <td>{teacher.phone}</td>
-                  <td>
-                    <select
-                      value={teacher.availability}
-                      onChange={(e) =>
-                        handleAvailabilityChange(teacher.username, e.target.value)
-                      }
-                    >
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </td>
-                  <td>
-                    <button
-                      className="btn-delete"
-                      onClick={() => handleDelete(teacher.username)}
-                    >
-                      Delete
-                    </button>
-                  </td>
+          <div className="teacher-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Department</th>
+                  <th>Phone</th>
+                  <th>Availability</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
+              </thead>
 
-          </table>
+              <tbody>
+                {filteredTeachers.map((teacher) => (
+                  <tr key={teacher.username}>
+                    <td>{teacher.name}</td>
+                    <td>{teacher.department}</td>
+                    <td>{teacher.phone}</td>
+                    <td>
+                      <select
+                        value={teacher.availability}
+                        onChange={(e) =>
+                          handleAvailabilityChange(teacher.username, e.target.value)
+                        }
+                      >
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                      </select>
+                    </td>
+                    <td>
+                      <button
+                        className="btn-delete"
+                        onClick={() => handleDelete(teacher.username)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>
