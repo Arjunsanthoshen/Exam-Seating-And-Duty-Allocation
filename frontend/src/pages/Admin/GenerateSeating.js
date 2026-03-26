@@ -105,7 +105,10 @@ const Allocation = () => {
 
         try {
             const response = await axios.post('http://localhost:5000/api/allocation/generate', payload);
-            alert(response.data.message + " Total students: " + response.data.totalAllocated);
+            const reportMessage = response.data.reportName
+                ? ` Report saved as ${response.data.reportName}.`
+                : "";
+            alert(response.data.message + reportMessage);
         } catch (err) {
             console.error("Generation Error:", err);
             const errorMsg = err.response?.data?.message || "Failed to generate allocation.";

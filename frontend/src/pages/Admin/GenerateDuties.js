@@ -59,7 +59,11 @@ const GenerateDuties = () => {
       if (type === 'delete') {
         await axios.delete("http://localhost:5000/api/duties/delete", { data: { date: examDate, session } });
       } else {
-        await axios.post("http://localhost:5000/api/duties/generate", { date: examDate, session });
+        const response = await axios.post("http://localhost:5000/api/duties/generate", { date: examDate, session });
+        const reportMessage = response.data?.reportName
+          ? ` Report saved as ${response.data.reportName}.`
+          : "";
+        alert((response.data?.message || "Duties generated successfully.") + reportMessage);
       }
       fetchSummary(); 
     } catch (err) { 
