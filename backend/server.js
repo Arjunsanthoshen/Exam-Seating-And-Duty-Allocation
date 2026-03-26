@@ -805,19 +805,24 @@ app.get('/api/duties/summary', (req, res) => {
 
     console.log(`[Universal Summary Check] Fetching for: ${formattedDate} (${session})`);
 
-    // Query 1: Get required invigilator count from actual seating allocation for this slot
-    const roomQuery = `
-        SELECT COUNT(DISTINCT CONCAT(sa.block, '-', sa.room_no)) AS required
-        FROM Seating_allocation sa
-        JOIN Exam_schedule es ON es.exam_id = sa.exam_id
-        WHERE es.exam_date = ? AND es.session = ? AND sa.session = ?
-    `;
+    // Query 1: Get rooms from seating allocation
+    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
 
-    db.query(roomQuery, [formattedDate, session, session], (err, roomResults) => {
+    db.query(roomQuery, [formattedDate, session], (err, roomResults) => {
         if (err) return res.status(500).json({ error: "Room Query Failed", details: err });
 
-        const required = Number(roomResults?.[0]?.required || 0);
-        const hasAllocation = required > 0;
+        let required = 0;
+        let hasAllocation = false;
+
+        if (roomResults.length > 0 && roomResults[0].selected_rooms) {
+            try {
+                const rooms = JSON.parse(roomResults[0].selected_rooms);
+                required = rooms.length;
+                hasAllocation = true;
+            } catch (e) {
+                console.error("Error parsing rooms:", e);
+            }
+        }
 
         // Query 2: Get available teachers (Must have duty_count > 0)
         const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
@@ -825,11 +830,13 @@ app.get('/api/duties/summary', (req, res) => {
         db.query(teacherQuery, (err, teacherResults) => {
             if (err) return res.status(500).json({ error: "Teacher Query Failed", details: err });
 
-            // Query 3: Check if duties are already generated for this exact slot
+            // Query 3: Check if duties are already generated
+            // We use a JOIN or a subquery to ensure the session matches the exam_id
             const checkGeneratedQuery = `
                 SELECT COUNT(*) as dutyCount 
                 FROM Duty_allocation d
-                WHERE d.exam_date = ? AND d.session = ?`;
+                JOIN Exam_schedule e ON d.exam_id = e.exam_id
+                WHERE d.exam_date = ? AND e.session = ?`;
 
             db.query(checkGeneratedQuery, [formattedDate, session], (err, checkResults) => {
                 if (err) return res.status(500).json({ error: "Check Generated Failed", details: err });
@@ -848,7 +855,6 @@ app.get('/api/duties/summary', (req, res) => {
 // 2. POST: Generate Duties with Fair Workload Balancing
 app.post('/api/duties/generate', async (req, res) => {
     const { date, session } = req.body;
-    if (!date || !session) return res.status(400).json({ message: "Date and session are required." });
     const formattedDate = new Date(date).toISOString().split('T')[0];
     const slotKey = getDutySlotKey(formattedDate, session);
 
@@ -864,21 +870,18 @@ app.post('/api/duties/generate', async (req, res) => {
         if (!exams.length) throw new Error("No Exam Schedule found for this slot.");
         const exam_id = exams[0].exam_id;
 
-        // B. Get the list of rooms from actual seating allocation for this exam/session
+        // B. Get the list of rooms allocated for this exam
         const [alloc] = await connection.query(
-            `SELECT DISTINCT room_no, block
-             FROM Seating_allocation
-             WHERE exam_id = ? AND session = ?
-             ORDER BY block ASC, room_no ASC`,
-            [exam_id, session]
+            `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`, 
+            [formattedDate, session]
         );
-        if (!alloc.length) throw new Error("No Seating Allocation found for this session. Please generate seating first.");
-        const selectedRooms = alloc;
+        if (!alloc.length) throw new Error("No Seating Allocation found. Please generate seating first.");
+        const selectedRooms = JSON.parse(alloc[0].selected_rooms);
 
         // C. WORKLOAD RESTORE: If re-generating, give points back to previously assigned teachers
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND exam_id = ? AND session = ?`,
-            [formattedDate, exam_id, session]
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
+            [formattedDate, exam_id]
         );
         const previousUsernames = prevDuties.map(d => d.Tusername);
         if (prevDuties.length > 0) {
@@ -887,8 +890,8 @@ app.post('/api/duties/generate', async (req, res) => {
                 [previousUsernames]
             );
             await connection.query(
-                `DELETE FROM Duty_allocation WHERE exam_date = ? AND exam_id = ? AND session = ?`,
-                [formattedDate, exam_id, session]
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
+                [formattedDate, exam_id]
             );
         }
 
@@ -918,17 +921,17 @@ app.post('/api/duties/generate', async (req, res) => {
 
         // E. Map teachers to rooms and prepare for bulk insert
         const assignedUsernames = [];
-        const dutyValues = selectedRooms.map((room, index) => {
-            const block = room.block;
-            const room_no = room.room_no;
+        const dutyValues = selectedRooms.map((roomFull, index) => {
+            const block = roomFull.match(/[A-Za-z]+/)[0];
+            const room_no = roomFull.match(/\d+/)[0];
             const tUser = teacherPool[index].username;
             assignedUsernames.push(tUser);
-            return [exam_id, room_no, block, tUser, formattedDate, session];
+            return [exam_id, room_no, block, tUser, formattedDate];
         });
 
         // F. Finalize: Save assignments and decrement duty points
         await connection.query(
-            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date, session) VALUES ?`,
+            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date) VALUES ?`,
             [dutyValues]
         );
 
@@ -952,14 +955,15 @@ app.post('/api/duties/generate', async (req, res) => {
 // 3. GET: Fetch the assigned duty list for the table
 app.get('/api/duties/list', (req, res) => {
     const { date, session } = req.query;
-    if (!date || !session) return res.status(400).json({ error: "Date and session are required" });
+    if (!date) return res.status(400).json({ error: "Date is required" });
     const formattedDate = new Date(date).toISOString().split('T')[0];
 
     const query = `
         SELECT d.room_no, d.block, d.Tusername, t.name as teacher_name
         FROM Duty_allocation d
         JOIN Teacher t ON d.Tusername = t.username
-        WHERE d.exam_date = ? AND d.session = ?
+        JOIN Exam_schedule e ON d.exam_id = e.exam_id
+        WHERE d.exam_date = ? AND e.session = ?
         ORDER BY d.block ASC, d.room_no ASC
     `;
     db.query(query, [formattedDate, session], (err, results) => {
@@ -997,8 +1001,9 @@ app.get('/api/exam-status-board', (req, res) => {
                 WHEN EXISTS (
                     SELECT 1
                     FROM Duty_allocation da
+                    JOIN Exam_schedule es3 ON es3.exam_id = da.exam_id
                     WHERE da.exam_date = slots.exam_date
-                      AND da.session = slots.session
+                      AND es3.session = slots.session
                 ) THEN 1
                 ELSE 0
             END AS duty_done
@@ -1023,7 +1028,6 @@ app.get('/api/exam-status-board', (req, res) => {
 // 5. DELETE: Remove duty allocation and RESTORE points
 app.delete('/api/duties/delete', async (req, res) => {
     const { date, session } = req.body;
-    if (!date || !session) return res.status(400).json({ message: "Date and session are required." });
     const formattedDate = new Date(date).toISOString().split('T')[0];
     const slotKey = getDutySlotKey(formattedDate, session);
 
@@ -1033,7 +1037,7 @@ app.delete('/api/duties/delete', async (req, res) => {
 
         // Find teachers assigned to this specific slot
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
             [formattedDate, session]
         );
 
@@ -1049,7 +1053,7 @@ app.delete('/api/duties/delete', async (req, res) => {
 
             // 2. Delete the actual duties
             await connection.query(
-                `DELETE FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
                 [formattedDate, session]
             );
         }
