@@ -765,6 +765,27 @@ app.get('/api/student/seating', authenticateToken, (req, res) => {
     });
 });
 
+// 4. Get Exam Timetable (Joining Seating and Exam Schedule)
+app.get('/api/student/exams', authenticateToken, (req, res) => {
+    const username = req.user.username;
+    const query = `
+        SELECT 
+            es.exam_number,
+            es.subject, 
+            es.sub_code, 
+            es.exam_date, 
+            es.session
+        FROM Seating_allocation sa
+        JOIN Exam_schedule es ON sa.exam_id = es.exam_id
+        WHERE sa.username = ?
+        ORDER BY es.exam_date ASC
+    `;
+    db.query(query, [username], (err, results) => {
+        if (err) return res.status(500).json({ error: "Failed to fetch timetable" });
+        res.json(results);
+    });
+});
+
 /* -------------------------------------------------------------------------- */
 /* FACULTY DUTY ALLOCATION ROUTES                      */
 /* -------------------------------------------------------------------------- */

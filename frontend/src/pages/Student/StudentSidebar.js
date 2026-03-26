@@ -4,14 +4,17 @@ import './StudentSidebar.css';
 
 const StudentSidebar = () => {
     const navigate = useNavigate();
-    const location = useLocation(); // Checks the current URL to highlight the active button
+    const location = useLocation();
 
     const handleLogout = () => {
+        // 1. Clear the token
         localStorage.removeItem('token');
-        navigate('/login');
+        
+        // 2. Point to "/" because that's where Login is in your App.js
+        // Using window.location.href ensures a clean refresh on logout
+        window.location.href = '/'; 
     };
 
-    // Helper function to check if a path is active
     const isActive = (path) => location.pathname === path ? 'active' : '';
 
     return (
@@ -21,7 +24,7 @@ const StudentSidebar = () => {
             </div>
 
             <div className="student-nav-group">
-                {/* Exam Hall - This is your landing page */}
+                {/* Exam Hall */}
                 <button 
                     className={`student-nav-item ${isActive('/ExamHall')}`} 
                     onClick={() => navigate('/ExamHall')}
@@ -29,10 +32,10 @@ const StudentSidebar = () => {
                     <span className="student-nav-icon">🏢</span> Exam Hall
                 </button>
 
-                {/* Exam Timetable */}
+                {/* Exam Timetable - Corrected path to match App.js (/ExamTimeTable) */}
                 <button 
-                    className={`student-nav-item ${isActive('/ExamTimetable')}`} 
-                    onClick={() => navigate('/ExamTimetable')}
+                    className={`student-nav-item ${isActive('/ExamTimeTable')}`} 
+                    onClick={() => navigate('/ExamTimeTable')}
                 >
                     <span className="student-nav-icon">📅</span> Timetable
                 </button>
