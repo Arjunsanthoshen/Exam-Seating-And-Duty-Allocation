@@ -489,7 +489,7 @@ app.get('/api/exam-schedule', (req, res) => {
         SELECT * FROM exam_schedule
         ORDER BY exam_date DESC, year ASC
         SELECT *
-        FROM exam_schedule
+        FROM Exam_schedule
         ORDER BY exam_date ASC, session ASC, branch ASC
     `;
 
@@ -527,31 +527,7 @@ app.post('/api/exam-schedule/add', (req, res) => {
 
 
     const query = `
-        INSERT INTO exam_schedule
-        (year, exam_number, exam_date, session, branch, subject, sub_code)
-        VALUES ?
-    `;
-
-    db.query(query, [values], (err) => {
-        if (err) {
-            console.error("SQL ADD Error:", err.message);
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ message: "Schedule saved successfully" });
-    });
-});
-
-// UPDATE: Updated to handle single branch update with sub_code
-app.post('/api/exam-schedule/update/:id', (req, res) => {
-    const { year, date, session, subjects, examNumber } = req.body;
-
-    // Find the branch currently in the state (Update mode usually handles one branch)
-    const branch = Object.keys(subjects).find(b => subjects[b].name !== "");
-    const subjectData = subjects[branch];
-
-    const query = `
-        UPDATE exam_schedule
-        SET year=?, exam_number=?, exam_date=?, session=?, branch=?, subject=?, sub_code=?
+        INSERT INTO Exam_schedule
         (year, exam_date, session, branch, subject, sub_code)
         VALUES (?, ?, ?, ?, ?, ?)
     `;
@@ -604,7 +580,7 @@ app.put('/api/exam-schedule/update/:id', (req, res) => {
 
 
     const query = `
-        UPDATE exam_schedule
+        UPDATE Exam_schedule
         SET
         year=?,
         exam_date=?,
@@ -665,7 +641,7 @@ app.delete('/api/exam-schedule/:id', (req, res) => {
 
 
     const query =
-        `DELETE FROM exam_schedule WHERE exam_id=?`;
+        `DELETE FROM Exam_schedule WHERE exam_id=?`;
 
 
     db.query(query,
@@ -1207,7 +1183,7 @@ SELECT
     r.col3,
     r.col4,
     r.col5
-FROM seating_allocation s
+FROM Seating_allocation s
 JOIN Rooms r ON s.room_no = r.room_no AND s.block = r.block
 WHERE s.exam_id = ?
 ORDER BY s.block, s.room_no, s.column_no, s.bench_no
