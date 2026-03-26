@@ -70,7 +70,7 @@ function Reports() {
     };
 
     return (
-        <div style={{ display: "flex" }}>
+        <div className="reports-layout">
             <AdminSidebar />
 
             <div className="reports-page">
@@ -116,49 +116,51 @@ function Reports() {
                 <div className="report-history">
                     <h3>Report History</h3>
 
-                    {loading ? (
-                        <div className="empty-history">
-                            <p>Loading reports...</p>
-                        </div>
-                    ) : reports.length === 0 ? (
-                        <div className="empty-history">
-                            <p>No reports found.</p>
-                            <span>Generated allocation reports will appear here.</span>
-                        </div>
-                    ) : (
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Report ID</th>
-                                    <th>Report Name</th>
-                                    <th>Exam Date</th>
-                                    <th>Type</th>
-                                    <th>Generated At</th>
-                                    <th>Filepath</th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                                {reports.map((report) => (
-                                    <tr key={report.report_id}>
-                                        <td>{report.report_id}</td>
-                                        <td>{report.report_name}</td>
-                                        <td>{new Date(report.exam_date).toLocaleDateString("en-CA")}</td>
-                                        <td>{report.report_type}</td>
-                                        <td>{new Date(report.generated_at).toLocaleString()}</td>
-                                        <td>
-                                            <button
-                                                className="download-btn"
-                                                onClick={() => handleDownload(report.report_id, report.report_name)}
-                                            >
-                                                Download
-                                            </button>
-                                        </td>
+                    <div className="report-history-scroll">
+                        {loading ? (
+                            <div className="empty-history">
+                                <p>Loading reports...</p>
+                            </div>
+                        ) : reports.length === 0 ? (
+                            <div className="empty-history">
+                                <p>No reports found.</p>
+                                <span>Generated allocation reports will appear here.</span>
+                            </div>
+                        ) : (
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Report ID</th>
+                                        <th>Report Name</th>
+                                        <th>Exam Date</th>
+                                        <th>Type</th>
+                                        <th>Generated At</th>
+                                        <th>Filepath</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
+                                </thead>
+
+                                <tbody>
+                                    {reports.map((report) => (
+                                        <tr key={report.report_id}>
+                                            <td>{report.report_id}</td>
+                                            <td>{report.report_name}</td>
+                                            <td>{new Date(report.exam_date).toLocaleDateString("en-CA")}</td>
+                                            <td>{report.report_type}</td>
+                                            <td>{new Date(report.generated_at).toLocaleString()}</td>
+                                            <td>
+                                                <button
+                                                    className="download-btn"
+                                                    onClick={() => handleDownload(report.report_id, report.report_name)}
+                                                >
+                                                    Download
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

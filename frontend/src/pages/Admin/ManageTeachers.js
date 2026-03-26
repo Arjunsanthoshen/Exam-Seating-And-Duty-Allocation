@@ -144,7 +144,7 @@ const handleDownloadTemplate = () => {
   </button>
 
   <p className="template-note">
-    Fill the downloaded file and upload the same sheet here. Required column order: username, name, department, phone.
+    Download the template, fill it, and upload the completed excel file.
   </p>
 
   <input
@@ -196,47 +196,48 @@ const handleDownloadTemplate = () => {
         <div className="table-card">
           <div className="table-header">Teacher Table</div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Department</th>
-                <th>Phone</th>
-                <th>Availability</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredTeachers.map((teacher) => (
-                <tr key={teacher.username}>
-                  <td>{teacher.name}</td>
-                  <td>{teacher.department}</td>
-                  <td>{teacher.phone}</td>
-                  <td>
-                    <select
-                      value={teacher.availability}
-                      onChange={(e) =>
-                        handleAvailabilityChange(teacher.username, e.target.value)
-                      }
-                    >
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </td>
-                  <td>
-                    <button
-                      className="btn-delete"
-                      onClick={() => handleDelete(teacher.username)}
-                    >
-                      Delete
-                    </button>
-                  </td>
+          <div className="teacher-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Department</th>
+                  <th>Phone</th>
+                  <th>Availability</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
+              </thead>
 
-          </table>
+              <tbody>
+                {filteredTeachers.map((teacher) => (
+                  <tr key={teacher.username}>
+                    <td>{teacher.name}</td>
+                    <td>{teacher.department}</td>
+                    <td>{teacher.phone}</td>
+                    <td>
+                      <select
+                        value={teacher.availability}
+                        onChange={(e) =>
+                          handleAvailabilityChange(teacher.username, e.target.value)
+                        }
+                      >
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                      </select>
+                    </td>
+                    <td>
+                      <button
+                        className="btn-delete"
+                        onClick={() => handleDelete(teacher.username)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>

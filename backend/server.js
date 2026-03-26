@@ -1224,6 +1224,53 @@ async function resolveHallSeatingExamDate(connection, examDate) {
     return rows.length ? rows[0].exam_date : examDate;
 }
 
+async function getAllocationHistoryReportMeta(connection, examDate) {
+    const [rows] = await connection.query(
+        `SELECT exam_date, selected_years
+         FROM Allocation_History
+         WHERE exam_date = ?
+         ORDER BY id DESC
+         LIMIT 1`,
+        [examDate]
+    );
+
+    if (rows.length) {
+        return rows[0];
+    }
+
+    const [fallbackRows] = await connection.query(
+        `SELECT exam_date, selected_years
+         FROM Allocation_History
+         ORDER BY id DESC
+         LIMIT 1`
+    );
+
+    return fallbackRows.length
+        ? fallbackRows[0]
+        : { exam_date: examDate, selected_years: "[]" };
+}
+
+function formatSelectedYearsForReport(selectedYears) {
+    let parsedYears = selectedYears;
+
+    if (typeof parsedYears === "string") {
+        try {
+            parsedYears = JSON.parse(parsedYears);
+        } catch (error) {
+            parsedYears = [];
+        }
+    }
+
+    if (!Array.isArray(parsedYears)) {
+        return "";
+    }
+
+    return parsedYears
+        .map(year => `Y${String(year).trim()}`)
+        .filter(Boolean)
+        .join(",");
+}
+
 
 function buildHallSeatingHtml(rows, examDate) {
     const rooms = {};
@@ -1807,6 +1854,130 @@ async function generateTotalSeatingPdfByExamId(connection, examId, examDate) {
     return renderPdfFromHtml(html);
 }
 
+async function buildInvigilationDutyRows(connection, examDate) {
+    const [rows] = await connection.query(
+        `SELECT
+            d.Tusername,
+            t.name AS teacher_name,
+            MAX(CASE WHEN UPPER(d.session) = 'FN' THEN 1 ELSE 0 END) AS has_fn,
+            MAX(CASE WHEN UPPER(d.session) = 'AN' THEN 1 ELSE 0 END) AS has_an
+         FROM Duty_allocation d
+         JOIN Teacher t ON t.username = d.Tusername
+         WHERE d.exam_date = ?
+         GROUP BY d.Tusername, t.name
+         ORDER BY t.name ASC, d.Tusername ASC`,
+        [examDate]
+    );
+
+    return rows;
+}
+
+function buildInvigilationDutyHtml(rows, examDate, selectedYearsLabel) {
+    const formattedExamDate = formatExamDateForReport(examDate);
+    const titleParts = ["INVIGILATION DUTY LIST FOR"];
+
+    if (selectedYearsLabel) {
+        titleParts.push(selectedYearsLabel);
+    }
+
+    titleParts.push("INTERNAL TEST :");
+    titleParts.push(formattedExamDate);
+
+    let html = `
+        <html>
+        <head>
+        <style>
+        body{
+            font-family: Arial;
+            text-align:center;
+        }
+
+        .college{
+            font-size:20px;
+            font-weight:bold;
+            margin-top:8px;
+        }
+
+        .report-title{
+            font-size:18px;
+            font-weight:bold;
+            margin-top:18px;
+        }
+
+        table{
+            border-collapse:collapse;
+            margin:20px auto 0;
+            width:88%;
+        }
+
+        th,td{
+            border:1px solid black;
+            padding:8px;
+            text-align:center;
+            vertical-align:middle;
+        }
+
+        th{
+            background:#e6e6e6;
+        }
+
+        .name-cell{
+            text-align:left;
+            padding-left:12px;
+        }
+        </style>
+        </head>
+        <body>
+        <div class="college">ST. JOSEPH'S COLLEGE OF ENGINEERING & TECHNOLOGY, PALAI</div>
+        <div class="report-title">${titleParts.join(" ")}</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>SI No</th>
+                    <th>Name</th>
+                    <th>FN</th>
+                    <th>AN</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    rows.forEach((row, index) => {
+        html += `
+            <tr>
+                <td>${index + 1}</td>
+                <td class="name-cell">${row.teacher_name || row.Tusername}</td>
+                <td>${row.has_fn ? "D" : ""}</td>
+                <td>${row.has_an ? "D" : ""}</td>
+            </tr>
+        `;
+    });
+
+    html += `
+            </tbody>
+        </table>
+        </body>
+        </html>
+    `;
+
+    return html;
+}
+
+async function generateInvigilationDutyPdfByExamDate(connection, examDate) {
+    const rows = await buildInvigilationDutyRows(connection, examDate);
+
+    if (!rows.length) {
+        throw new Error("No duty allocation found");
+    }
+
+    const reportMeta = await getAllocationHistoryReportMeta(connection, examDate);
+    const resolvedExamDate = reportMeta.exam_date || examDate;
+    const selectedYearsLabel = formatSelectedYearsForReport(reportMeta.selected_years);
+    const html = buildInvigilationDutyHtml(rows, resolvedExamDate, selectedYearsLabel);
+
+    return renderPdfFromHtml(html);
+}
+
 async function getNextHallWiseReportNumber(connection) {
     const [rows] = await connection.query(
         `SELECT report_name
@@ -1834,6 +2005,24 @@ async function getNextTotalSeatingReportNumber(connection) {
 
     const maxNumber = rows.reduce((max, row) => {
         const match = row.report_name && row.report_name.match(/total-seating-report(\d+)$/i);
+        if (!match) {
+            return max;
+        }
+        return Math.max(max, Number(match[1]));
+    }, 0);
+
+    return maxNumber + 1;
+}
+
+async function getNextInvigilationDutyReportNumber(connection) {
+    const [rows] = await connection.query(
+        `SELECT report_name
+         FROM Reports
+         WHERE report_name LIKE 'invigilation-duty-report%'`
+    );
+
+    const maxNumber = rows.reduce((max, row) => {
+        const match = row.report_name && row.report_name.match(/invigilation-duty-report(\d+)$/i);
         if (!match) {
             return max;
         }
@@ -2017,13 +2206,12 @@ app.get('/api/teacher/dashboard', (req, res) => {
         const dutyQuery = `
             SELECT 
                 d.exam_date,
-                e.session,
-                CONCAT(d.block, d.room_no) AS exam_hall
+                d.session,
+                CONCAT(d.block, ' ', d.room_no) AS exam_hall
             FROM Duty_allocation d
-            JOIN Exam_schedule e ON e.exam_id = d.exam_id
             WHERE d.Tusername = ?
             ORDER BY d.exam_date ASC,
-                     FIELD(e.session, 'FN', 'AN', 'Both'),
+                     FIELD(d.session, 'FN', 'AN', 'Both'),
                      d.block ASC,
                      d.room_no ASC
         `;
@@ -2384,9 +2572,38 @@ app.post('/api/duties/generate', async (req, res) => {
             [assignedUsernames]
         );
 
+        const invigilationDutyPdfBuffer = await generateInvigilationDutyPdfByExamDate(connection, formattedDate);
+        const nextInvigilationDutyReportNumber = await getNextInvigilationDutyReportNumber(connection);
+        const invigilationDutyReportName = `invigilation-duty-report${nextInvigilationDutyReportNumber}`;
+        const invigilationDutyFilePath = path.join(
+            generatedReportsDir,
+            `${invigilationDutyReportName}.pdf`
+        );
+
+        fs.writeFileSync(invigilationDutyFilePath, invigilationDutyPdfBuffer);
+
+        const [[reportIdRow]] = await connection.query(
+            `SELECT COALESCE(MAX(report_id), 0) + 1 AS nextReportId FROM Reports`
+        );
+
+        await connection.query(
+            `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
+             VALUES (?, ?, ?, ?, ?)`,
+            [
+                reportIdRow.nextReportId,
+                "Invigilation Duty",
+                formattedDate,
+                invigilationDutyReportName,
+                invigilationDutyFilePath
+            ]
+        );
+
         await connection.commit();
         recentDutyAssignments.set(slotKey, assignedUsernames);
-        res.json({ message: "Duties generated successfully with workload balancing." });
+        res.json({
+            message: "Duties generated successfully with workload balancing.",
+            reportName: invigilationDutyReportName
+        });
 
     } catch (err) {
         await connection.rollback();
@@ -2444,14 +2661,11 @@ app.get('/api/exam-status-board', (req, res) => {
                 WHEN EXISTS (
                     SELECT 1
                     FROM Duty_allocation da
-<<<<<<< HEAD
                     JOIN Exam_schedule es3 ON es3.exam_id = da.exam_id
                     WHERE da.exam_date = slots.exam_date
                       AND es3.session = slots.session
-=======
                     WHERE da.exam_date = slots.exam_date
                       AND da.session = slots.session
->>>>>>> 2b37495d1765bfa2f553f7a8254cd19d2c817d54
                 ) THEN 1
                 ELSE 0
             END AS duty_done

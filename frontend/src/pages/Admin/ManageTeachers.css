@@ -1,7 +1,23 @@
+.dashboard-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  height: 100vh;
+  overflow: hidden;
+}
+
 .manage-container {
+  display: flex;
+  flex-direction: column;
   padding: 40px;
   background: linear-gradient(to right, #6f94c9, #8db2e5);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .page-title {
@@ -11,40 +27,33 @@
 
 .card {
   background: white;
-  border-radius: 12px;
+  border-radius: 0 0 12px 12px;
   overflow: hidden;
-  margin-bottom: 50px;
-  padding-bottom:40px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
   box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+  flex-shrink: 0;
 }
 
 .card-header {
   background: linear-gradient(to right, #5b87c4, #7ea4db);
   color: white;
-  padding: 15px;
+  padding: 12px 15px;
   font-weight: bold;
-}
-
-.add-form {
-  padding: 20px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 15px;
-  align-items: flex-start;
-  min-height: 130px;
-}
-
-.add-form button{
-  position:relative;
-  z-index:5;
+  text-align: center;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(255,255,255,0.2);
+  border-radius: 0;
 }
 
 
 .add-form input {
-  padding: 10px;
+  padding: 9px 10px;
   border-radius: 8px;
   border: 1px solid #ccc;
-  width: 220px;
+  width: 210px;
 }
 
 .btn-primary {
@@ -82,7 +91,8 @@
   border-radius: 8px;
   border: 1px solid #ccc;
   width: 300px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .table-card {
@@ -90,13 +100,40 @@
   border-radius: 12px;
   box-shadow: 0 6px 15px rgba(0,0,0,0.15);
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.add-form {
+  padding: 16px 20px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  min-height: 0;
+}
+
+.add-form button{
+  position:relative;
+  z-index:5;
 }
 
 .table-header {
   background: linear-gradient(to right, #5b87c4, #7ea4db);
   color: white;
-  padding: 15px;
+  padding: 12px 15px;
   font-weight: bold;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.teacher-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 table {
@@ -108,6 +145,9 @@ th {
   background: #5b87c4;
   color: white;
   padding: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 td {
@@ -150,18 +190,18 @@ td {
 }
 
 .excel-upload-box{
-  margin-top:20px;
+  margin-top: 12px;
   display:flex;
   flex-direction: column;
   align-items: center;
-  gap:12px;
+  gap: 10px;
 }
 
 .template-note {
   max-width: 420px;
   margin: 0;
   color: #4f5f75;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   text-align: center;
 }
@@ -170,7 +210,7 @@ td {
   width:360px;
   border:2px dashed #b8c6db;
   border-radius:10px;
-  padding:18px;
+  padding:12px 18px;
   text-align:center;
   cursor:pointer;
   background:#f8fbff;
@@ -185,18 +225,19 @@ td {
 
 .upload-title{
   font-weight:600;
-  font-size:16px;
-  margin-bottom:5px;
+  font-size:18px;
+  margin-bottom:4px;
 }
 
 .upload-subtitle{
-  font-size:13px;
+  font-size:15px;
   color:#666;
+  margin: 0;
 }
 
 .file-selected{
-  margin-top:10px;
-  font-size:13px;
+  margin-top:8px;
+  font-size:14px;
   color:#333;
 }
 
@@ -214,4 +255,32 @@ td {
 
 .excel-submit{
   margin-top:10px;
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+
+  .main-content {
+    height: auto;
+    overflow: visible;
+  }
+
+  .manage-container {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+    padding: 20px;
+  }
+
+  .search-box {
+    width: 100%;
+  }
+
+  .table-card {
+    min-height: 420px;
+  }
 }
