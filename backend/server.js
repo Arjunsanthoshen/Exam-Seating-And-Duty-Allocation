@@ -16,7 +16,7 @@ const BCRYPT_HASH_PREFIX = /^\$2[aby]\$\d{2}\$/;
 const app = express();
 
 /* -------------------------------------------------------------------------- */
-/*                                 MIDDLEWARE                                 */
+/* MIDDLEWARE                                 */
 /* -------------------------------------------------------------------------- */
 
 app.use(cors());
@@ -24,6 +24,7 @@ app.use(express.json());
 app.use(express.json());
 
 /* -------------------------------------------------------------------------- */
+/* DATABASE CONNECTION                             */
 /*                              FILE UPLOAD SETUP                             */
 /* -------------------------------------------------------------------------- */
 
@@ -139,7 +140,7 @@ ensureRequestTables().catch((error) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/*                        STUDENT MANAGEMENT ROUTES                           */
+/* STUDENT MANAGEMENT ROUTES                           */
 /* -------------------------------------------------------------------------- */
 app.get('/api/students', (req, res) => {
 
@@ -211,7 +212,7 @@ app.delete('/api/students/:year/:branch/:batch', (req, res) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/*                             MANAGE ROOMS ROUTES                            */
+/* MANAGE ROOMS ROUTES                            */
 /* -------------------------------------------------------------------------- */
 
 app.get('/api/rooms', (req, res) => {
@@ -290,7 +291,7 @@ app.post('/api/rooms', (req, res) => {
     });
 });
 /* -------------------------------------------------------------------------- */
-/*                           MANAGE TEACHERS ROUTES                           */
+/* MANAGE TEACHERS ROUTES                           */
 /* -------------------------------------------------------------------------- */
 
 app.get('/api/teachers', (req, res) => {
@@ -366,6 +367,10 @@ app.put('/api/teachers/availability', (req, res) => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* EXAM SCHEDULE ROUTES                             */
+/* -------------------------------------------------------------------------- */
+
+// GET ALL: Updated to select all columns including sub_code
 /*                         TEACHER EXCEL UPLOAD ROUTE                         */
 /* -------------------------------------------------------------------------- */
 
@@ -481,6 +486,8 @@ app.post("/api/teachers/upload-excel", upload.single("file"), async (req, res) =
 app.get('/api/exam-schedule', (req, res) => {
 
     const query = `
+        SELECT * FROM exam_schedule
+        ORDER BY exam_date DESC, year ASC
         SELECT *
         FROM exam_schedule
         ORDER BY exam_date ASC, session ASC, branch ASC
@@ -497,11 +504,18 @@ app.get('/api/exam-schedule', (req, res) => {
 
 });
 
+// ADD: Updated to handle nested object structure {name, code} and batch insert
 
 
 // ADD EXAM
 app.post('/api/exam-schedule/add', (req, res) => {
 
+    // Filter branches where at least a name is entered, then map to SQL array
+    const values = Object.entries(subjects)
+        .filter(([_, sub]) => sub.name && sub.name.trim() !== "")
+        .map(([branch, sub]) =>
+            [year, examNumber, date, session, branch, sub.name, sub.code]
+        );
     const {
         year,
         exam_date,
@@ -514,6 +528,30 @@ app.post('/api/exam-schedule/add', (req, res) => {
 
     const query = `
         INSERT INTO exam_schedule
+        (year, exam_number, exam_date, session, branch, subject, sub_code)
+        VALUES ?
+    `;
+
+    db.query(query, [values], (err) => {
+        if (err) {
+            console.error("SQL ADD Error:", err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        res.json({ message: "Schedule saved successfully" });
+    });
+});
+
+// UPDATE: Updated to handle single branch update with sub_code
+app.post('/api/exam-schedule/update/:id', (req, res) => {
+    const { year, date, session, subjects, examNumber } = req.body;
+
+    // Find the branch currently in the state (Update mode usually handles one branch)
+    const branch = Object.keys(subjects).find(b => subjects[b].name !== "");
+    const subjectData = subjects[branch];
+
+    const query = `
+        UPDATE exam_schedule
+        SET year=?, exam_number=?, exam_date=?, session=?, branch=?, subject=?, sub_code=?
         (year, exam_date, session, branch, subject, sub_code)
         VALUES (?, ?, ?, ?, ?, ?)
     `;
@@ -579,6 +617,15 @@ app.put('/api/exam-schedule/update/:id', (req, res) => {
 
 
     db.query(query,
+        [year, examNumber, date, session, branch, subjectData.name, subjectData.code, req.params.id],
+        (err) => {
+            if (err) {
+                console.error("SQL UPDATE Error:", err.message);
+                return res.status(500).json(err);
+            }
+            res.json({ message: "Updated successfully" });
+        }
+    );
 
         [
             year,
@@ -599,7 +646,7 @@ app.put('/api/exam-schedule/update/:id', (req, res) => {
                 message: "Exam schedule updated successfully"
             });
 
-        });
+        };
 
 });
 
@@ -607,6 +654,15 @@ app.put('/api/exam-schedule/update/:id', (req, res) => {
 
 // DELETE EXAM
 app.delete('/api/exam-schedule/:id', (req, res) => {
+    db.query(
+        'DELETE FROM exam_schedule WHERE exam_id = ?',
+        [req.params.id],
+        (err) => {
+            if (err) return res.status(500).json(err);
+            res.json({ message: "Deleted successfully" });
+        }
+    );
+
 
     const query =
         `DELETE FROM exam_schedule WHERE exam_id=?`;
@@ -629,7 +685,7 @@ app.delete('/api/exam-schedule/:id', (req, res) => {
 
 });
 /* -------------------------------------------------------------------------- */
-/*                                LOGIN ROUTES                                */
+/* LOGIN ROUTES                                */
 /* -------------------------------------------------------------------------- */
 
 app.post("/api/login", (req, res) => {
@@ -803,7 +859,7 @@ app.post("/api/signup", async (req, res) => {
 
 
 // ----------------------------------------------------------------------------
-//                        SEATING ALLOCATION ROUTES
+//                         SEATING ALLOCATION ROUTES
 // ----------------------------------------------------------------------------
 
 // GET: Fetch required data for the Allocation page
@@ -813,7 +869,6 @@ app.get('/api/allocation/init', async (req, res) => {
         const [rooms] = await db.promise().query('SELECT block, room_no, capacity FROM Rooms ORDER BY block, room_no');
         
         // Fetch student counts grouped by join year
-        // We calculate academic year based on current year
         const currentYear = new Date().getFullYear();
         const [students] = await db.promise().query(`
             SELECT 
@@ -1086,19 +1141,16 @@ app.post('/api/allocation/generate', async (req, res) => {
         connection.release();
     }
 });
+
 // ----------------------------------------------------------------------------
-//                        SAVE & FETCH SELECTION ROUTES
+//                         SAVE & FETCH SELECTION ROUTES
 // ----------------------------------------------------------------------------
 
-// POST: Save current selection
 app.post('/api/allocation/save', (req, res) => {
     const { examDate, session, selectedYears, selectedRooms } = req.body;
-
-    // Convert arrays to strings for MySQL storage
     const yearsStr = JSON.stringify(selectedYears);
     const roomsStr = JSON.stringify(selectedRooms);
 
-    // We use ID 1 to maintain a single 'Last Saved' state
     const query = `
         INSERT INTO Allocation_History (id, exam_date, session, selected_years, selected_rooms)
         VALUES (1, ?, ?, ?, ?)
@@ -1110,21 +1162,16 @@ app.post('/api/allocation/save', (req, res) => {
     `;
 
     db.query(query, [examDate, session, yearsStr, roomsStr], (err, result) => {
-        if (err) {
-            console.error("Save Selection Error:", err);
-            return res.status(500).json({ error: "Failed to save selection" });
-        }
+        if (err) return res.status(500).json({ error: "Failed to save selection" });
         res.json({ message: "Selection saved successfully" });
     });
 });
 
-// GET: Fetch saved selection (Update your existing init route or add this)
 app.get('/api/allocation/saved-state', (req, res) => {
     db.query('SELECT * FROM Allocation_History WHERE id = 1', (err, results) => {
         if (err) return res.status(500).json(err);
         if (results.length > 0) {
             const data = results[0];
-            // Convert strings back to arrays/objects
             res.json({
                 examDate: data.exam_date,
                 session: data.session,
@@ -2117,6 +2164,7 @@ app.get("/api/reports/hall-seating/:date", async (req, res) => {
 
 
 
+
 // ----------------------------------------------------------------------------
 //                        Student Portal
 // ----------------------------------------------------------------------------
@@ -2179,6 +2227,28 @@ app.get('/api/student/seating', authenticateToken, (req, res) => {
     });
 });
 
+// 4. Get Exam Timetable (Joining Seating and Exam Schedule)
+app.get('/api/student/exams', authenticateToken, (req, res) => {
+    const username = req.user.username;
+    const query = `
+        SELECT 
+            es.exam_number,
+            es.subject, 
+            es.sub_code, 
+            es.exam_date, 
+            es.session
+        FROM Seating_allocation sa
+        JOIN Exam_schedule es ON sa.exam_id = es.exam_id
+        WHERE sa.username = ?
+        ORDER BY es.exam_date ASC
+    `;
+    db.query(query, [username], (err, results) => {
+        if (err) return res.status(500).json({ error: "Failed to fetch timetable" });
+        res.json(results);
+    });
+});
+
+/* -------------------------------------------------------------------------- */
 app.get('/api/teacher/dashboard', (req, res) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -2438,19 +2508,24 @@ app.get('/api/duties/summary', (req, res) => {
 
     console.log(`[Universal Summary Check] Fetching for: ${formattedDate} (${session})`);
 
-    // Query 1: Get required invigilator count from actual seating allocation for this slot
-    const roomQuery = `
-        SELECT COUNT(DISTINCT CONCAT(sa.block, '-', sa.room_no)) AS required
-        FROM Seating_allocation sa
-        JOIN Exam_schedule es ON es.exam_id = sa.exam_id
-        WHERE es.exam_date = ? AND es.session = ? AND sa.session = ?
-    `;
+    // Query 1: Get rooms from seating allocation
+    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
 
-    db.query(roomQuery, [formattedDate, session, session], (err, roomResults) => {
+    db.query(roomQuery, [formattedDate, session], (err, roomResults) => {
         if (err) return res.status(500).json({ error: "Room Query Failed", details: err });
 
-        const required = Number(roomResults?.[0]?.required || 0);
-        const hasAllocation = required > 0;
+        let required = 0;
+        let hasAllocation = false;
+
+        if (roomResults.length > 0 && roomResults[0].selected_rooms) {
+            try {
+                const rooms = JSON.parse(roomResults[0].selected_rooms);
+                required = rooms.length;
+                hasAllocation = true;
+            } catch (e) {
+                console.error("Error parsing rooms:", e);
+            }
+        }
 
         // Query 2: Get available teachers (Must have duty_count > 0)
         const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
@@ -2483,7 +2558,6 @@ app.get('/api/duties/summary', (req, res) => {
 // 2. POST: Generate Duties with Fair Workload Balancing
 app.post('/api/duties/generate', async (req, res) => {
     const { date, session } = req.body;
-    if (!date || !session) return res.status(400).json({ message: "Date and session are required." });
     const formattedDate = new Date(date).toISOString().split('T')[0];
     const slotKey = getDutySlotKey(formattedDate, session);
 
@@ -2499,21 +2573,18 @@ app.post('/api/duties/generate', async (req, res) => {
         if (!exams.length) throw new Error("No Exam Schedule found for this slot.");
         const exam_id = exams[0].exam_id;
 
-        // B. Get the list of rooms from actual seating allocation for this exam/session
+        // B. Get the list of rooms allocated for this exam
         const [alloc] = await connection.query(
-            `SELECT DISTINCT room_no, block
-             FROM Seating_allocation
-             WHERE exam_id = ? AND session = ?
-             ORDER BY block ASC, room_no ASC`,
-            [exam_id, session]
+            `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`, 
+            [formattedDate, session]
         );
-        if (!alloc.length) throw new Error("No Seating Allocation found for this session. Please generate seating first.");
-        const selectedRooms = alloc;
+        if (!alloc.length) throw new Error("No Seating Allocation found. Please generate seating first.");
+        const selectedRooms = JSON.parse(alloc[0].selected_rooms);
 
         // C. WORKLOAD RESTORE: If re-generating, give points back to previously assigned teachers
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND exam_id = ? AND session = ?`,
-            [formattedDate, exam_id, session]
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
+            [formattedDate, exam_id]
         );
         const previousUsernames = prevDuties.map(d => d.Tusername);
         if (prevDuties.length > 0) {
@@ -2522,8 +2593,8 @@ app.post('/api/duties/generate', async (req, res) => {
                 [previousUsernames]
             );
             await connection.query(
-                `DELETE FROM Duty_allocation WHERE exam_date = ? AND exam_id = ? AND session = ?`,
-                [formattedDate, exam_id, session]
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
+                [formattedDate, exam_id]
             );
         }
 
@@ -2553,17 +2624,17 @@ app.post('/api/duties/generate', async (req, res) => {
 
         // E. Map teachers to rooms and prepare for bulk insert
         const assignedUsernames = [];
-        const dutyValues = selectedRooms.map((room, index) => {
-            const block = room.block;
-            const room_no = room.room_no;
+        const dutyValues = selectedRooms.map((roomFull, index) => {
+            const block = roomFull.match(/[A-Za-z]+/)[0];
+            const room_no = roomFull.match(/\d+/)[0];
             const tUser = teacherPool[index].username;
             assignedUsernames.push(tUser);
-            return [exam_id, room_no, block, tUser, formattedDate, session];
+            return [exam_id, room_no, block, tUser, formattedDate];
         });
 
         // F. Finalize: Save assignments and decrement duty points
         await connection.query(
-            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date, session) VALUES ?`,
+            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date) VALUES ?`,
             [dutyValues]
         );
 
@@ -2616,14 +2687,15 @@ app.post('/api/duties/generate', async (req, res) => {
 // 3. GET: Fetch the assigned duty list for the table
 app.get('/api/duties/list', (req, res) => {
     const { date, session } = req.query;
-    if (!date || !session) return res.status(400).json({ error: "Date and session are required" });
+    if (!date) return res.status(400).json({ error: "Date is required" });
     const formattedDate = new Date(date).toISOString().split('T')[0];
 
     const query = `
         SELECT d.room_no, d.block, d.Tusername, t.name as teacher_name
         FROM Duty_allocation d
         JOIN Teacher t ON d.Tusername = t.username
-        WHERE d.exam_date = ? AND d.session = ?
+        JOIN Exam_schedule e ON d.exam_id = e.exam_id
+        WHERE d.exam_date = ? AND e.session = ?
         ORDER BY d.block ASC, d.room_no ASC
     `;
     db.query(query, [formattedDate, session], (err, results) => {
@@ -2665,7 +2737,7 @@ app.get('/api/exam-status-board', (req, res) => {
                     WHERE da.exam_date = slots.exam_date
                       AND es3.session = slots.session
                     WHERE da.exam_date = slots.exam_date
-                      AND da.session = slots.session
+                      AND es3.session = slots.session
                 ) THEN 1
                 ELSE 0
             END AS duty_done
@@ -2690,7 +2762,6 @@ app.get('/api/exam-status-board', (req, res) => {
 // 5. DELETE: Remove duty allocation and RESTORE points
 app.delete('/api/duties/delete', async (req, res) => {
     const { date, session } = req.body;
-    if (!date || !session) return res.status(400).json({ message: "Date and session are required." });
     const formattedDate = new Date(date).toISOString().split('T')[0];
     const slotKey = getDutySlotKey(formattedDate, session);
 
@@ -2700,7 +2771,7 @@ app.delete('/api/duties/delete', async (req, res) => {
 
         // Find teachers assigned to this specific slot
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
             [formattedDate, session]
         );
 
@@ -2716,7 +2787,7 @@ app.delete('/api/duties/delete', async (req, res) => {
 
             // 2. Delete the actual duties
             await connection.query(
-                `DELETE FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
                 [formattedDate, session]
             );
         }
@@ -2731,7 +2802,7 @@ app.delete('/api/duties/delete', async (req, res) => {
     }
 });
 /* -------------------------------------------------------------------------- */
-/*                                SERVER START                                */
+/* SERVER START                                */
 /* -------------------------------------------------------------------------- */
 
 const PORT = 5000;
