@@ -1554,15 +1554,18 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         const allocElapsed = Date.now() - tAllocStart;
         console.log(`[SEATING TIMING] [seating allocation completion] Allocation logic & ${insertedSeatCount} individual SQL row inserts completed in ${allocElapsed} ms (avg ${(allocElapsed / (insertedSeatCount || 1)).toFixed(2)} ms/seat insert)`);
 
-        console.log(`[SEATING TIMING] [report HTML generation] Triggering Hall-wise PDF flow...`);
+        const tAllPdfStart = Date.now();
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Starting Seating PDF generation pipeline (Hall-wise + Total Seating)...`);
+
         const tHallWiseStart = Date.now();
         const hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate);
-        console.log(`[SEATING TIMING] [Hall-wise PDF complete] Total Hall-wise PDF generation took ${Date.now() - tHallWiseStart} ms`);
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Hall-wise PDF stage completed in ${Date.now() - tHallWiseStart} ms`);
 
-        console.log(`[SEATING TIMING] [report HTML generation] Triggering Total Seating PDF flow...`);
         const tTotalStart = Date.now();
         const totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate);
-        console.log(`[SEATING TIMING] [Total Seating PDF complete] Total Seating PDF generation took ${Date.now() - tTotalStart} ms`);
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Total Seating PDF stage completed in ${Date.now() - tTotalStart} ms`);
+
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Both Seating PDFs generated in ${Date.now() - tAllPdfStart} ms`);
 
         const tDbReportsStart = Date.now();
         const nextHallWiseReportNumber = await getNextHallWiseReportNumber(connection);
@@ -1875,6 +1878,7 @@ function formatSelectedYearsForReport(selectedYears) {
 
 
 function buildHallSeatingHtml(rows, examDate) {
+    const tProcStart = Date.now();
     const rooms = {};
     const formattedExamDate = formatExamDateForReport(examDate);
     const getJoinYearFromUsername = (username) => {
@@ -1961,6 +1965,10 @@ function buildHallSeatingHtml(rows, examDate) {
         }
     });
 
+    const procElapsed = Date.now() - tProcStart;
+    console.log(`[SEATING PDF TIMING] [Hall-wise] [seating data processing] completed in ${procElapsed} ms (number of students/seats rendered: ${rows.length}, distinct rooms: ${Object.keys(rooms).length})`);
+
+    const tHtmlStart = Date.now();
     let html = `
         <html>
         <head>
@@ -2196,6 +2204,9 @@ function buildHallSeatingHtml(rows, examDate) {
     });
 
     html += `</body></html>`;
+    const htmlElapsed = Date.now() - tHtmlStart;
+    const htmlSizeBytes = Buffer.byteLength(html, "utf8");
+    console.log(`[SEATING PDF TIMING] [Hall-wise] [HTML generation] completed in ${htmlElapsed} ms (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes, number of pages expected: ${Object.keys(rooms).length})`);
     return html;
 }
 
@@ -2271,12 +2282,13 @@ function resolveChromeExecutable() {
     return null;
 }
 
-async function renderPdfFromHtml(html, reportName = "PDF") {
+async function renderPdfFromHtml(html, reportName = "PDF", meta = {}) {
     const isSeatingReport = reportName === "Hall-wise" || reportName === "Total Seating";
-    const prefix = isSeatingReport ? `[SEATING TIMING] [${reportName}]` : `[PDF TIMING] [${reportName}]`;
+    const prefix = isSeatingReport ? `[SEATING PDF TIMING] [${reportName}]` : (reportName === "Invigilation Duty" ? `[DUTY PDF TIMING] [${reportName}]` : `[PDF TIMING] [${reportName}]`);
     const tRenderStart = Date.now();
+    const htmlSizeBytes = Buffer.byteLength(html, "utf8");
 
-    console.log(`${prefix} Starting renderPdfFromHtml (HTML size: ${html.length} chars)`);
+    console.log(`${prefix} Starting renderPdfFromHtml (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes${meta.seatCount ? `, number of students/seats rendered: ${meta.seatCount}` : ""}${meta.expectedPages ? `, number of pages expected: ${meta.expectedPages}` : ""})`);
     console.time(`${prefix} Puppeteer total renderPdfFromHtml`);
     const executablePath = resolveChromeExecutable();
 
@@ -2311,14 +2323,14 @@ async function renderPdfFromHtml(html, reportName = "PDF") {
     };
 
     const tLaunchStart = Date.now();
-    console.log(`${prefix} [Puppeteer browser launch] Launching browser...`);
+    console.log(`${prefix} [Puppeteer browser launch] Starting browser launch...`);
     console.time(`${prefix} Puppeteer browser launch`);
     let browser;
     try {
         browser = await puppeteer.launch(launchOptions);
         const launchElapsed = Date.now() - tLaunchStart;
         console.timeEnd(`${prefix} Puppeteer browser launch`);
-        console.log(`${prefix} [Puppeteer browser launch] Browser launched in ${launchElapsed} ms`);
+        console.log(`${prefix} [Puppeteer browser launch] completed in ${launchElapsed} ms`);
     } catch (launchErr) {
         const launchElapsed = Date.now() - tLaunchStart;
         console.error(`${prefix} [Puppeteer browser launch] FAILED after ${launchElapsed} ms with error: ${launchErr.message}`);
@@ -2332,26 +2344,26 @@ async function renderPdfFromHtml(html, reportName = "PDF") {
         // Stage: any waitForNavigation or retry
         console.log(`${prefix} [any waitForNavigation or retry] None configured (page.setContent uses internal LifecycleWatcher with waitUntil: "networkidle0", no separate waitForNavigation or retry)`);
 
-        // Stage: page.setContent / page.goto
+        // Stage: page.setContent() / navigation
         const tSetContentStart = Date.now();
-        console.log(`${prefix} [page.setContent / page.goto] Starting page.setContent() (waitUntil: "networkidle0", timeout: 30000ms)...`);
+        console.log(`${prefix} [page.setContent() / navigation] Starting page.setContent() (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes, waitUntil: "networkidle0", timeout: 30000ms)...`);
         console.time(`${prefix} page.setContent()`);
         try {
             await page.setContent(html, { waitUntil: "networkidle0" });
             const setContentElapsed = Date.now() - tSetContentStart;
             console.timeEnd(`${prefix} page.setContent()`);
-            console.log(`${prefix} [page.setContent / page.goto] page.setContent completed successfully in ${setContentElapsed} ms`);
+            console.log(`${prefix} [page.setContent() / navigation] completed in ${setContentElapsed} ms`);
         } catch (setContentErr) {
             const setContentElapsed = Date.now() - tSetContentStart;
             try { console.timeEnd(`${prefix} page.setContent()`); } catch (e) {}
-            console.error(`${prefix} [page.setContent / page.goto] [TIMEOUT / ERROR IDENTIFIED] page.setContent THREW: ${setContentErr.message} after ${setContentElapsed} ms`);
-            console.error(`${prefix} [page.setContent / page.goto] Exact stack:`, setContentErr.stack);
+            console.error(`${prefix} [page.setContent() / navigation] [TIMEOUT / ERROR IDENTIFIED] page.setContent THREW: ${setContentErr.message} after ${setContentElapsed} ms`);
+            console.error(`${prefix} [page.setContent() / navigation] Exact stack:`, setContentErr.stack);
             throw setContentErr;
         }
 
-        // Stage: page.pdf
+        // Stage: page.pdf()
         const tPdfStart = Date.now();
-        console.log(`${prefix} [page.pdf] Rendering PDF buffer...`);
+        console.log(`${prefix} [page.pdf()] Rendering PDF buffer...`);
         console.time(`${prefix} page.pdf()`);
         const pdfBuffer = await page.pdf({
             format: "A4",
@@ -2365,8 +2377,9 @@ async function renderPdfFromHtml(html, reportName = "PDF") {
             }
         });
         const pdfElapsed = Date.now() - tPdfStart;
+        const pageCount = (pdfBuffer.toString("latin1").match(/\/Type\s*\/Page\b/g) || []).length;
         console.timeEnd(`${prefix} page.pdf()`);
-        console.log(`${prefix} [page.pdf] page.pdf completed in ${pdfElapsed} ms (buffer size: ${pdfBuffer.length} bytes)`);
+        console.log(`${prefix} [page.pdf()] completed in ${pdfElapsed} ms (PDF buffer size: ${pdfBuffer.length} bytes, number of pages generated: ${pageCount}${meta.expectedPages ? `, expected: ${meta.expectedPages}` : ""})`);
 
         return pdfBuffer;
     } finally {
@@ -2378,37 +2391,48 @@ async function renderPdfFromHtml(html, reportName = "PDF") {
             await browser.close();
             const closeElapsed = Date.now() - tCloseStart;
             console.timeEnd(`${prefix} browser close`);
-            console.log(`${prefix} [browser close] Browser closed in ${closeElapsed} ms`);
+            console.log(`${prefix} [browser close] completed in ${closeElapsed} ms`);
         } catch (closeErr) {
             const closeElapsed = Date.now() - tCloseStart;
             console.error(`${prefix} [browser close] Browser close failed after ${closeElapsed} ms: ${closeErr.message}`);
         }
         try { console.timeEnd(`${prefix} Puppeteer total renderPdfFromHtml`); } catch (e) {}
-        console.log(`${prefix} Total renderPdfFromHtml completed in ${Date.now() - tRenderStart} ms`);
+        console.log(`${prefix} Total renderPdfFromHtml duration: ${Date.now() - tRenderStart} ms`);
     }
 }
 
 async function generateHallSeatingPdfByExamId(connection, examId, examDate) {
+    const tTotalStart = Date.now();
+    console.log(`[SEATING PDF TIMING] [Hall-wise] [total generation time] Starting Hall-wise seating PDF generation for examId=${examId}, examDate=${examDate}...`);
+
     const tDbStart = Date.now();
-    console.log(`[SEATING TIMING] [Hall-wise] [database queries] Fetching seating rows from DB for exam ${examId}...`);
+    console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] Fetching seating rows from DB for exam ${examId}...`);
     const rows = await buildHallSeatingRows(connection, examId);
 
     if (!rows.length) {
-        console.log(`[SEATING TIMING] [Hall-wise] [database queries] No seating found (took ${Date.now() - tDbStart} ms)`);
+        console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] No seating found (took ${Date.now() - tDbStart} ms)`);
         throw new Error("No seating found");
     }
 
     const resolvedExamDate = await resolveHallSeatingExamDate(connection, examDate);
     const dbElapsed = Date.now() - tDbStart;
-    console.log(`[SEATING TIMING] [Hall-wise] [database queries] Fetched ${rows.length} rows & resolved exam date in ${dbElapsed} ms`);
+    console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] completed in ${dbElapsed} ms (${rows.length} seating rows fetched)`);
 
-    const tHtmlStart = Date.now();
-    console.log(`[SEATING TIMING] [Hall-wise] [report HTML generation] Starting HTML generation...`);
+    const distinctRooms = new Set(rows.map(r => `${r.block}-${r.room_no}`));
+    const expectedPages = distinctRooms.size;
+    console.log(`[SEATING PDF TIMING] [Hall-wise] [metadata] number of students/seats rendered: ${rows.length}, distinct rooms: ${distinctRooms.size}, number of pages expected: ${expectedPages}`);
+
     const html = buildHallSeatingHtml(rows, resolvedExamDate);
-    const htmlElapsed = Date.now() - tHtmlStart;
-    console.log(`[SEATING TIMING] [Hall-wise] [report HTML generation] HTML generated in ${htmlElapsed} ms (length: ${html.length} chars)`);
 
-    return renderPdfFromHtml(html, "Hall-wise");
+    const pdfBuffer = await renderPdfFromHtml(html, "Hall-wise", {
+        seatCount: rows.length,
+        expectedPages: expectedPages
+    });
+
+    const totalGenElapsed = Date.now() - tTotalStart;
+    console.log(`[SEATING PDF TIMING] [Hall-wise] [total generation time] completed in ${totalGenElapsed} ms`);
+
+    return pdfBuffer;
 }
 
 async function buildTotalSeatingRows(connection, examId) {
@@ -2466,6 +2490,7 @@ function compressRollNumbers(rollNumbers) {
 }
 
 function buildTotalSeatingHtml(rows, examDate) {
+    const tProcStart = Date.now();
     const formattedExamDate = formatExamDateForReport(examDate);
     const batchMap = new Map();
     const branchBatchCount = new Map();
@@ -2538,6 +2563,10 @@ function buildTotalSeatingHtml(rows, examDate) {
 
     let previousBatchLabel = "";
 
+    const procElapsed = Date.now() - tProcStart;
+    console.log(`[SEATING PDF TIMING] [Total Seating] [seating data processing] completed in ${procElapsed} ms (number of students/seats rendered: ${rows.length}, grouped batches: ${groupedRows.length})`);
+
+    const tHtmlStart = Date.now();
     let html = `
         <html>
         <head>
@@ -2615,30 +2644,43 @@ function buildTotalSeatingHtml(rows, examDate) {
         </html>
     `;
 
+    const htmlElapsed = Date.now() - tHtmlStart;
+    const htmlSizeBytes = Buffer.byteLength(html, "utf8");
+    console.log(`[SEATING PDF TIMING] [Total Seating] [HTML generation] completed in ${htmlElapsed} ms (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes, number of pages expected: 1-2)`);
+
     return html;
 }
 
 async function generateTotalSeatingPdfByExamId(connection, examId, examDate) {
+    const tTotalStart = Date.now();
+    console.log(`[SEATING PDF TIMING] [Total Seating] [total generation time] Starting Total Seating PDF generation for examId=${examId}, examDate=${examDate}...`);
+
     const tDbStart = Date.now();
-    console.log(`[SEATING TIMING] [Total Seating] [database queries] Fetching total seating rows from DB for exam ${examId}...`);
+    console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] Fetching total seating rows from DB for exam ${examId}...`);
     const rows = await buildTotalSeatingRows(connection, examId);
 
     if (!rows.length) {
-        console.log(`[SEATING TIMING] [Total Seating] [database queries] No seating found (took ${Date.now() - tDbStart} ms)`);
+        console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] No seating found (took ${Date.now() - tDbStart} ms)`);
         throw new Error("No seating found");
     }
 
     const resolvedExamDate = await resolveHallSeatingExamDate(connection, examDate);
     const dbElapsed = Date.now() - tDbStart;
-    console.log(`[SEATING TIMING] [Total Seating] [database queries] Fetched ${rows.length} rows & resolved exam date in ${dbElapsed} ms`);
+    console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] completed in ${dbElapsed} ms (${rows.length} total seating rows fetched)`);
 
-    const tHtmlStart = Date.now();
-    console.log(`[SEATING TIMING] [Total Seating] [report HTML generation] Starting HTML generation...`);
+    console.log(`[SEATING PDF TIMING] [Total Seating] [metadata] number of students/seats rendered: ${rows.length}, number of pages expected: 1-2`);
+
     const html = buildTotalSeatingHtml(rows, resolvedExamDate);
-    const htmlElapsed = Date.now() - tHtmlStart;
-    console.log(`[SEATING TIMING] [Total Seating] [report HTML generation] HTML generated in ${htmlElapsed} ms (length: ${html.length} chars)`);
 
-    return renderPdfFromHtml(html, "Total Seating");
+    const pdfBuffer = await renderPdfFromHtml(html, "Total Seating", {
+        seatCount: rows.length,
+        expectedPages: 1
+    });
+
+    const totalGenElapsed = Date.now() - tTotalStart;
+    console.log(`[SEATING PDF TIMING] [Total Seating] [total generation time] completed in ${totalGenElapsed} ms`);
+
+    return pdfBuffer;
 }
 
 async function buildInvigilationDutyRows(connection, examDate) {
@@ -2751,24 +2793,40 @@ function buildInvigilationDutyHtml(rows, examDate, selectedYearsLabel) {
 }
 
 async function generateInvigilationDutyPdfByExamDate(connection, examDate) {
-    console.time("[PDF TIMING] [Invigilation Duty] database queries / allocation retrieval");
+    const tDutyStart = Date.now();
+    console.log(`[DUTY PDF TIMING] [total generation time] Starting Invigilation Duty PDF generation for examDate=${examDate}...`);
+
+    const tDbStart = Date.now();
+    console.log(`[DUTY PDF TIMING] [database queries] Fetching duty rows from DB for examDate=${examDate}...`);
     const rows = await buildInvigilationDutyRows(connection, examDate);
 
     if (!rows.length) {
-        console.timeEnd("[PDF TIMING] [Invigilation Duty] database queries / allocation retrieval");
+        console.log(`[DUTY PDF TIMING] [database queries] No duty allocation found (took ${Date.now() - tDbStart} ms)`);
         throw new Error("No duty allocation found");
     }
 
     const reportMeta = await getAllocationHistoryReportMeta(connection, examDate);
     const resolvedExamDate = reportMeta.exam_date || examDate;
     const selectedYearsLabel = formatSelectedYearsForReport(reportMeta.selected_years);
-    console.timeEnd("[PDF TIMING] [Invigilation Duty] database queries / allocation retrieval");
+    const dbElapsed = Date.now() - tDbStart;
+    console.log(`[DUTY PDF TIMING] [database queries] completed in ${dbElapsed} ms (${rows.length} duty rows fetched)`);
 
-    console.time("[PDF TIMING] [Invigilation Duty] HTML generation");
+    console.log(`[DUTY PDF TIMING] [metadata] number of teachers/duties rendered: ${rows.length}, number of pages expected: 1`);
+
+    const tHtmlStart = Date.now();
     const html = buildInvigilationDutyHtml(rows, resolvedExamDate, selectedYearsLabel);
-    console.timeEnd("[PDF TIMING] [Invigilation Duty] HTML generation");
+    const htmlElapsed = Date.now() - tHtmlStart;
+    console.log(`[DUTY PDF TIMING] [HTML generation] completed in ${htmlElapsed} ms (generated HTML size: ${html.length} chars, ${Buffer.byteLength(html, 'utf8')} bytes)`);
 
-    return renderPdfFromHtml(html, "Invigilation Duty");
+    const pdfBuffer = await renderPdfFromHtml(html, "Invigilation Duty", {
+        seatCount: rows.length,
+        expectedPages: 1
+    });
+
+    const totalGenElapsed = Date.now() - tDutyStart;
+    console.log(`[DUTY PDF TIMING] [total generation time] completed in ${totalGenElapsed} ms`);
+
+    return pdfBuffer;
 }
 
 async function getNextHallWiseReportNumber(connection) {
