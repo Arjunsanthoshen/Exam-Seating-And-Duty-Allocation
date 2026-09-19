@@ -2153,11 +2153,31 @@ function buildHallSeatingHtml(rows, examDate) {
 }
 
 async function renderPdfFromHtml(html) {
-    // Resolve Chrome executable: prefer explicit env override, then fall back to
-    // puppeteer.executablePath() which correctly locates the bundled Chrome on
-    // both local machines and Render's cache directory.
+    // Resolve Chrome executable:
+    //   1. PUPPETEER_EXECUTABLE_PATH env var (manual override, e.g. system chromium)
+    //   2. puppeteer.executablePath() — reads .puppeteerrc.cjs which points the
+    //      cache into backend/.cache/puppeteer (inside the project directory).
+    //      This path survives Render's build→runtime transition, unlike ~/.cache.
     const executablePath =
         process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
+
+    // Pre-flight: verify the binary actually exists before attempting to launch.
+    // This gives a clear, actionable error in logs instead of a cryptic ENOENT.
+    if (!fs.existsSync(executablePath)) {
+        const cacheDir = process.env.PUPPETEER_CACHE_DIR || "(default)";
+        console.error(
+            `[PDF] Chrome binary not found at: ${executablePath}\n` +
+            `  PUPPETEER_CACHE_DIR=${cacheDir}\n` +
+            `  Ensure 'puppeteer browsers install chrome' ran during build and\n` +
+            `  that PUPPETEER_CACHE_DIR points inside the project directory.`
+        );
+        throw new Error(
+            `Chrome executable not found at "${executablePath}". ` +
+            "PDF generation is unavailable. Check server logs for details."
+        );
+    }
+
+    console.log(`[PDF] Launching Chrome: ${executablePath}`);
 
     const launchOptions = {
         headless: "new",

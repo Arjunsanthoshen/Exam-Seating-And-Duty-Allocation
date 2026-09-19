@@ -126,3 +126,29 @@ Once deployed:
    ```
 2. Log into the admin portal using the configured `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
 3. Generate reports to confirm dynamic PDF compilation.
+
+---
+
+## 6. Puppeteer / Chrome on Render — How It Works
+
+PDF generation uses [Puppeteer](https://pptr.dev/) which requires a Chromium binary.
+
+### Why a special setup is needed
+
+Render's **free tier web services** have an ephemeral filesystem: the `~/.cache` home directory (where Puppeteer defaults to storing Chrome) **is not guaranteed to persist** from the build container to the running container. This causes `chrome not found` errors at runtime even though the build succeeded.
+
+### The fix (`backend/.puppeteerrc.cjs` + `PUPPETEER_CACHE_DIR`)
+
+`backend/.puppeteerrc.cjs` redirects Puppeteer's cache directory to `backend/.cache/puppeteer` — **inside the project directory** at `/opt/render/project/src/backend/.cache/puppeteer`. This path IS preserved from build to runtime.
+
+The `render.yaml` `envVars` also sets `PUPPETEER_CACHE_DIR` to the same path as a belt-and-suspenders override for Puppeteer's CLI browser installer.
+
+The `buildCommand` in `render.yaml` explicitly runs `npx --prefix backend puppeteer browsers install chrome` after `npm install` to ensure Chrome is always installed to the correct location, even if the `postinstall` hook was skipped.
+
+### Troubleshooting PDF generation failures
+
+If PDF generation fails on Render, check the service logs for `[PDF]` lines:
+- **`Chrome binary not found at: ...`** — Chrome was not installed to the expected path during build. Re-deploy the service (triggering a fresh build) and verify the build log shows a successful `puppeteer browsers install chrome` step.
+- **`[PDF] Launching Chrome: /opt/render/project/src/backend/.cache/puppeteer/chrome/...`** — Chrome found and PDF generation attempted successfully.
+
+To manually override the Chrome path (e.g. to use a system-installed Chromium), set the `PUPPETEER_EXECUTABLE_PATH` environment variable in the Render dashboard.

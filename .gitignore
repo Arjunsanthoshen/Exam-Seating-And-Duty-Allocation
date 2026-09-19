@@ -22,3 +22,6 @@ yarn-error.log*
 Thumbs.db
 
 backend/generated_reports/*.pdf
+
+# Puppeteer Chrome cache (downloaded during build, ~200MB - do not commit)
+backend/.cache/
