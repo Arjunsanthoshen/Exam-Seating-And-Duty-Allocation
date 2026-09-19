@@ -11,8 +11,15 @@ function resolveApiBaseUrl() {
   if (process.env.REACT_APP_API_URL) {
     return process.env.REACT_APP_API_URL.replace(/\/$/, "");
   }
-  // In the browser: same-origin means the Express backend is serving this page.
+  // When running the frontend dev server locally (e.g. localhost:3000), route API calls to Express backend on port 5000
   if (typeof window !== "undefined") {
+    if (
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+      window.location.port !== "5000"
+    ) {
+      return "http://localhost:5000";
+    }
+    // In production single-service deployment, the Express backend serves this page.
     return window.location.origin;
   }
   // SSR / test environments
