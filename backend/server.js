@@ -1421,8 +1421,8 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         let globalYearPointer = 0;
 
         const tAllocStart = Date.now();
-        let insertedSeatCount = 0;
-        console.log(`[SEATING TIMING] [allocation calculation] Starting seating allocation loop & row insertions...`);
+        const seatingValues = [];
+        console.log(`[SEATING TIMING] [allocation calculation] Starting seating allocation loop...`);
 
         // =========================
         // STRICT GLOBAL ALLOCATION
@@ -1466,27 +1466,19 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                         const studentAcadYear = baseYear - student.year + 1;
                         const targetExamId = examMap[`${studentAcadYear}_${student.branch}`] || exam_id;
 
-                        await connection.query(
-                            `INSERT INTO Seating_allocation
-                            (exam_id, room_no, block,
-                             column_no, bench_no, seat_position,
-                             username, batch, roll_no, branch, session)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                            [
-                                targetExamId,
-                                room.room_no,
-                                room.block,
-                                colIndex + 1,
-                                bench,
-                                "left",
-                                student.username,
-                                student.batch,
-                                student.roll_no,
-                                student.branch,
-                                session
-                            ]
-                        );
-                        insertedSeatCount++;
+                        seatingValues.push([
+                            targetExamId,
+                            room.room_no,
+                            room.block,
+                            colIndex + 1,
+                            bench,
+                            "left",
+                            student.username,
+                            student.batch,
+                            student.roll_no,
+                            student.branch,
+                            session
+                        ]);
                     }
 
                     // RIGHT (if 2 per bench)
@@ -1514,32 +1506,38 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                             const studentAcadYear = baseYear - student.year + 1;
                             const targetExamId = examMap[`${studentAcadYear}_${student.branch}`] || exam_id;
 
-                            await connection.query(
-                                `INSERT INTO Seating_allocation
-                                (exam_id, room_no, block,
-                                 column_no, bench_no, seat_position,
-                                 username, batch, roll_no, branch, session)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                                [
-                                    targetExamId,
-                                    room.room_no,
-                                    room.block,
-                                    colIndex + 1,
-                                    bench,
-                                    "right",
-                                    student.username,
-                                    student.batch,
-                                    student.roll_no,
-                                    student.branch,
-                                    session
-                                ]
-                            );
-                            insertedSeatCount++;
+                            seatingValues.push([
+                                targetExamId,
+                                room.room_no,
+                                room.block,
+                                colIndex + 1,
+                                bench,
+                                "right",
+                                student.username,
+                                student.batch,
+                                student.roll_no,
+                                student.branch,
+                                session
+                            ]);
                         }
                     }
                 }
             }
         }
+
+        // Bulk insert all allocated seats in a single SQL statement
+        const tBulkInsertStart = Date.now();
+        if (seatingValues.length > 0) {
+            await connection.query(
+                `INSERT INTO Seating_allocation
+                (exam_id, room_no, block,
+                 column_no, bench_no, seat_position,
+                 username, batch, roll_no, branch, session)
+                 VALUES ?`,
+                [seatingValues]
+            );
+        }
+        const bulkInsertElapsed = Date.now() - tBulkInsertStart;
 
         // Upsert into Allocation_History for this slot
         await connection.query(
@@ -1552,20 +1550,45 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         );
 
         const allocElapsed = Date.now() - tAllocStart;
-        console.log(`[SEATING TIMING] [seating allocation completion] Allocation logic & ${insertedSeatCount} individual SQL row inserts completed in ${allocElapsed} ms (avg ${(allocElapsed / (insertedSeatCount || 1)).toFixed(2)} ms/seat insert)`);
+        console.log(`[SEATING TIMING] [seating allocation completion] Allocation calculation & bulk insert of ${seatingValues.length} seats completed in ${allocElapsed} ms (bulk SQL query took ${bulkInsertElapsed} ms)`);
 
         const tAllPdfStart = Date.now();
-        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Starting Seating PDF generation pipeline (Hall-wise + Total Seating)...`);
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Starting Seating PDF generation pipeline with shared Puppeteer browser...`);
 
-        const tHallWiseStart = Date.now();
-        const hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate);
-        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Hall-wise PDF stage completed in ${Date.now() - tHallWiseStart} ms`);
+        const tSharedLaunchStart = Date.now();
+        const executablePath = resolveChromeExecutable();
+        if (!executablePath) {
+            throw new Error("Chrome executable not found. PDF generation is unavailable.");
+        }
+        const sharedBrowser = await puppeteer.launch({
+            headless: "new",
+            executablePath,
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu"
+            ]
+        });
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] [Puppeteer browser launch] Shared browser launched in ${Date.now() - tSharedLaunchStart} ms`);
 
-        const tTotalStart = Date.now();
-        const totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate);
-        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Total Seating PDF stage completed in ${Date.now() - tTotalStart} ms`);
+        let hallWisePdfBuffer;
+        let totalSeatingPdfBuffer;
+        try {
+            const tHallWiseStart = Date.now();
+            hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser);
+            console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Hall-wise PDF stage completed in ${Date.now() - tHallWiseStart} ms`);
 
-        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Both Seating PDFs generated in ${Date.now() - tAllPdfStart} ms`);
+            const tTotalStart = Date.now();
+            totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser);
+            console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Total Seating PDF stage completed in ${Date.now() - tTotalStart} ms`);
+        } finally {
+            const tSharedCloseStart = Date.now();
+            await sharedBrowser.close();
+            console.log(`[SEATING PDF TIMING] [Combined Seating Flow] [browser close] Shared browser closed in ${Date.now() - tSharedCloseStart} ms`);
+        }
+
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] [total generation time] Both Seating PDFs generated with shared browser in ${Date.now() - tAllPdfStart} ms`);
 
         const tDbReportsStart = Date.now();
         const nextHallWiseReportNumber = await getNextHallWiseReportNumber(connection);
@@ -2282,7 +2305,7 @@ function resolveChromeExecutable() {
     return null;
 }
 
-async function renderPdfFromHtml(html, reportName = "PDF", meta = {}) {
+async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBrowser = null) {
     const isSeatingReport = reportName === "Hall-wise" || reportName === "Total Seating";
     const prefix = isSeatingReport ? `[SEATING PDF TIMING] [${reportName}]` : (reportName === "Invigilation Duty" ? `[DUTY PDF TIMING] [${reportName}]` : `[PDF TIMING] [${reportName}]`);
     const tRenderStart = Date.now();
@@ -2290,55 +2313,63 @@ async function renderPdfFromHtml(html, reportName = "PDF", meta = {}) {
 
     console.log(`${prefix} Starting renderPdfFromHtml (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes${meta.seatCount ? `, number of students/seats rendered: ${meta.seatCount}` : ""}${meta.expectedPages ? `, number of pages expected: ${meta.expectedPages}` : ""})`);
     console.time(`${prefix} Puppeteer total renderPdfFromHtml`);
-    const executablePath = resolveChromeExecutable();
 
-    if (!executablePath) {
-        const attemptedPptr = (() => {
-            try { return puppeteer.executablePath(); } catch (e) { return `(error: ${e.message})`; }
-        })();
-        console.error(
-            `[PDF] Chrome executable could not be found.\n` +
-            `  PUPPETEER_CACHE_DIR: ${process.env.PUPPETEER_CACHE_DIR}\n` +
-            `  puppeteer.executablePath(): ${attemptedPptr}\n` +
-            `  in-project cache checked: ${IN_PROJECT_PUPPETEER_CACHE_DIR}\n` +
-            `  Ensure Chrome is installed via 'node backend/scripts/install-chrome.js' during build.`
-        );
-        throw new Error(
-            `Chrome executable not found. PDF generation is unavailable. ` +
-            `Searched in-project cache (${IN_PROJECT_PUPPETEER_CACHE_DIR}), ~/.cache, and system paths. Check server logs.`
-        );
+    let browser = existingBrowser;
+    const shouldCloseBrowser = !existingBrowser;
+
+    if (!browser) {
+        const executablePath = resolveChromeExecutable();
+
+        if (!executablePath) {
+            const attemptedPptr = (() => {
+                try { return puppeteer.executablePath(); } catch (e) { return `(error: ${e.message})`; }
+            })();
+            console.error(
+                `[PDF] Chrome executable could not be found.\n` +
+                `  PUPPETEER_CACHE_DIR: ${process.env.PUPPETEER_CACHE_DIR}\n` +
+                `  puppeteer.executablePath(): ${attemptedPptr}\n` +
+                `  in-project cache checked: ${IN_PROJECT_PUPPETEER_CACHE_DIR}\n` +
+                `  Ensure Chrome is installed via 'node backend/scripts/install-chrome.js' during build.`
+            );
+            throw new Error(
+                `Chrome executable not found. PDF generation is unavailable. ` +
+                `Searched in-project cache (${IN_PROJECT_PUPPETEER_CACHE_DIR}), ~/.cache, and system paths. Check server logs.`
+            );
+        }
+
+        console.log(`[PDF] Launching Chrome: ${executablePath}`);
+
+        const launchOptions = {
+            headless: "new",
+            executablePath,
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu"
+            ]
+        };
+
+        const tLaunchStart = Date.now();
+        console.log(`${prefix} [Puppeteer browser launch] Starting browser launch...`);
+        console.time(`${prefix} Puppeteer browser launch`);
+        try {
+            browser = await puppeteer.launch(launchOptions);
+            const launchElapsed = Date.now() - tLaunchStart;
+            console.timeEnd(`${prefix} Puppeteer browser launch`);
+            console.log(`${prefix} [Puppeteer browser launch] completed in ${launchElapsed} ms`);
+        } catch (launchErr) {
+            const launchElapsed = Date.now() - tLaunchStart;
+            console.error(`${prefix} [Puppeteer browser launch] FAILED after ${launchElapsed} ms with error: ${launchErr.message}`);
+            throw launchErr;
+        }
+    } else {
+        console.log(`${prefix} [Puppeteer browser launch] Reusing existing shared browser instance (0 ms)`);
     }
 
-    console.log(`[PDF] Launching Chrome: ${executablePath}`);
-
-    const launchOptions = {
-        headless: "new",
-        executablePath,
-        args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu"
-        ]
-    };
-
-    const tLaunchStart = Date.now();
-    console.log(`${prefix} [Puppeteer browser launch] Starting browser launch...`);
-    console.time(`${prefix} Puppeteer browser launch`);
-    let browser;
+    let page;
     try {
-        browser = await puppeteer.launch(launchOptions);
-        const launchElapsed = Date.now() - tLaunchStart;
-        console.timeEnd(`${prefix} Puppeteer browser launch`);
-        console.log(`${prefix} [Puppeteer browser launch] completed in ${launchElapsed} ms`);
-    } catch (launchErr) {
-        const launchElapsed = Date.now() - tLaunchStart;
-        console.error(`${prefix} [Puppeteer browser launch] FAILED after ${launchElapsed} ms with error: ${launchErr.message}`);
-        throw launchErr;
-    }
-
-    try {
-        const page = await browser.newPage();
+        page = await browser.newPage();
         await page.setJavaScriptEnabled(false);
 
         // Stage: any waitForNavigation or retry
@@ -2383,25 +2414,31 @@ async function renderPdfFromHtml(html, reportName = "PDF", meta = {}) {
 
         return pdfBuffer;
     } finally {
-        // Stage: browser close
-        const tCloseStart = Date.now();
-        console.log(`${prefix} [browser close] Closing browser...`);
-        console.time(`${prefix} browser close`);
-        try {
-            await browser.close();
-            const closeElapsed = Date.now() - tCloseStart;
-            console.timeEnd(`${prefix} browser close`);
-            console.log(`${prefix} [browser close] completed in ${closeElapsed} ms`);
-        } catch (closeErr) {
-            const closeElapsed = Date.now() - tCloseStart;
-            console.error(`${prefix} [browser close] Browser close failed after ${closeElapsed} ms: ${closeErr.message}`);
+        if (page) {
+            try { await page.close(); } catch (e) {}
+        }
+        if (shouldCloseBrowser && browser) {
+            const tCloseStart = Date.now();
+            console.log(`${prefix} [browser close] Closing browser...`);
+            console.time(`${prefix} browser close`);
+            try {
+                await browser.close();
+                const closeElapsed = Date.now() - tCloseStart;
+                console.timeEnd(`${prefix} browser close`);
+                console.log(`${prefix} [browser close] completed in ${closeElapsed} ms`);
+            } catch (closeErr) {
+                const closeElapsed = Date.now() - tCloseStart;
+                console.error(`${prefix} [browser close] Browser close failed after ${closeElapsed} ms: ${closeErr.message}`);
+            }
+        } else {
+            console.log(`${prefix} [browser close] Page closed; shared browser retained for subsequent tasks`);
         }
         try { console.timeEnd(`${prefix} Puppeteer total renderPdfFromHtml`); } catch (e) {}
         console.log(`${prefix} Total renderPdfFromHtml duration: ${Date.now() - tRenderStart} ms`);
     }
 }
 
-async function generateHallSeatingPdfByExamId(connection, examId, examDate) {
+async function generateHallSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null) {
     const tTotalStart = Date.now();
     console.log(`[SEATING PDF TIMING] [Hall-wise] [total generation time] Starting Hall-wise seating PDF generation for examId=${examId}, examDate=${examDate}...`);
 
@@ -2427,7 +2464,7 @@ async function generateHallSeatingPdfByExamId(connection, examId, examDate) {
     const pdfBuffer = await renderPdfFromHtml(html, "Hall-wise", {
         seatCount: rows.length,
         expectedPages: expectedPages
-    });
+    }, existingBrowser);
 
     const totalGenElapsed = Date.now() - tTotalStart;
     console.log(`[SEATING PDF TIMING] [Hall-wise] [total generation time] completed in ${totalGenElapsed} ms`);
@@ -2651,7 +2688,7 @@ function buildTotalSeatingHtml(rows, examDate) {
     return html;
 }
 
-async function generateTotalSeatingPdfByExamId(connection, examId, examDate) {
+async function generateTotalSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null) {
     const tTotalStart = Date.now();
     console.log(`[SEATING PDF TIMING] [Total Seating] [total generation time] Starting Total Seating PDF generation for examId=${examId}, examDate=${examDate}...`);
 
@@ -2675,7 +2712,7 @@ async function generateTotalSeatingPdfByExamId(connection, examId, examDate) {
     const pdfBuffer = await renderPdfFromHtml(html, "Total Seating", {
         seatCount: rows.length,
         expectedPages: 1
-    });
+    }, existingBrowser);
 
     const totalGenElapsed = Date.now() - tTotalStart;
     console.log(`[SEATING PDF TIMING] [Total Seating] [total generation time] completed in ${totalGenElapsed} ms`);
