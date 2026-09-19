@@ -1,14 +1,10 @@
 services:
-  # ----------------------------------------------------------------------------
-  # Backend API Web Service
-  # ----------------------------------------------------------------------------
   - type: web
-    name: exam-allocation-backend
+    name: exam-allocation
     env: node
     plan: free
-    rootDir: backend
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: npm install && npm install --prefix frontend && npm run build
+    startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -17,11 +13,6 @@ services:
         value: 10000
       - key: JWT_SECRET
         generateValue: true
-      - key: CORS_ORIGIN
-        fromService:
-          type: web
-          name: exam-allocation-frontend
-          property: host
       - key: MYSQL_URL
         sync: false
       - key: DB_SSL
@@ -30,24 +21,5 @@ services:
         value: admin@sjcetpalai.ac.in
       - key: ADMIN_PASSWORD
         generateValue: true
-
-  # ----------------------------------------------------------------------------
-  # Frontend Static Site
-  # ----------------------------------------------------------------------------
-  - type: web
-    name: exam-allocation-frontend
-    env: static
-    plan: free
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: build
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: REACT_APP_API_URL
-        fromService:
-          type: web
-          name: exam-allocation-backend
-          property: host
+      - key: CORS_ORIGIN
+        sync: false
