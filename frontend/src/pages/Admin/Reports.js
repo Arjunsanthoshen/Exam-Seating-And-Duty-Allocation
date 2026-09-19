@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import "./report.css";
 import AdminSidebar from "./AdminSidebar";
+import { API_BASE_URL } from "../../api/config";
 import { FaTrash, FaDownload } from "react-icons/fa";
 
 function Reports() {
@@ -14,7 +15,7 @@ function Reports() {
     const fetchReports = async (filters = {}) => {
         setLoading(true);
         try {
-            const res = await axios.get("http://localhost:5000/api/reports", {
+            const res = await axios.get(`${API_BASE_URL}/api/reports`, {
                 params: filters
             });
             setReports(res.data || []);
@@ -47,7 +48,7 @@ function Reports() {
     const handleDownload = async (reportId, reportName) => {
         try {
             const response = await axios.get(
-                `http://localhost:5000/api/reports/${reportId}/download`,
+                `${API_BASE_URL}/api/reports/${reportId}/download`,
                 { responseType: "blob" }
             );
 
@@ -86,7 +87,7 @@ function Reports() {
         }
 
         try {
-            const res = await axios.delete("http://localhost:5000/api/reports/bulk", {
+            const res = await axios.delete(`${API_BASE_URL}/api/reports/bulk`, {
                 data: { reportIds: selectedReportIds }
             });
             alert(res.data?.message || `Successfully deleted ${selectedReportIds.length} report(s).`);
@@ -103,7 +104,7 @@ function Reports() {
         }
 
         try {
-            await axios.delete(`http://localhost:5000/api/reports/${reportId}`);
+            await axios.delete(`${API_BASE_URL}/api/reports/${reportId}`);
             fetchReports();
         } catch (error) {
             console.error("Failed to delete report", error);

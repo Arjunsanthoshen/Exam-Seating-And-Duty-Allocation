@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../api/config';
 import {
   FaCalendarAlt,
   FaBuilding,
@@ -41,8 +42,8 @@ const ExamHall = () => {
         const fetchData = async () => {
             try {
                 const [profileRes, seatingRes] = await Promise.all([
-                    axios.get('http://localhost:5000/api/student/profile', config),
-                    axios.get('http://localhost:5000/api/student/seating', config)
+                    axios.get(`${API_BASE_URL}/api/student/profile`, config),
+                    axios.get(`${API_BASE_URL}/api/student/seating`, config)
                 ]);
                 
                 const profile = profileRes.data || {};

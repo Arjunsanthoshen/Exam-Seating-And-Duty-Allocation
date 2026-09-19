@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './GenerateSeating.css';
 import AdminSidebar from './AdminSidebar'; 
+import { API_BASE_URL } from '../../api/config';
 import { FaChevronLeft, FaChevronRight, FaBolt, FaSpinner, FaTrash, FaCheckCircle } from 'react-icons/fa';
 
 const Allocation = () => {
@@ -58,7 +59,7 @@ const Allocation = () => {
     const loadSavedSlotState = useCallback(async (date, sess, roomList = rooms, sData = studentData) => {
         if (!date || !sess) return;
         try {
-            const res = await axios.get(`http://localhost:5000/api/allocation/saved-state?examDate=${date}&session=${sess}`);
+            const res = await axios.get(`${API_BASE_URL}/api/allocation/saved-state?examDate=${date}&session=${sess}`);
             if (res.data) {
                 setIsGenerated(Boolean(res.data.isGenerated));
                 const loadedYears = res.data.selectedYears ? res.data.selectedYears.map(Number) : [];
@@ -94,7 +95,7 @@ const Allocation = () => {
     useEffect(() => {
         const init = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/allocation/init');
+                const res = await axios.get(`${API_BASE_URL}/api/allocation/init`);
                 const roomList = res.data.rooms || [];
                 const sData = res.data.students || res.data.studentData || [];
                 setRooms(roomList);
@@ -103,7 +104,7 @@ const Allocation = () => {
                 let validScheduledDates = res.data.scheduledDates || [];
                 if (!validScheduledDates.length) {
                     try {
-                        const dateRes = await axios.get('http://localhost:5000/api/exam-dates-only');
+                        const dateRes = await axios.get(`${API_BASE_URL}/api/exam-dates-only`);
                         validScheduledDates = (dateRes.data || [])
                             .map(d => getYYYYMMDD(new Date(d.exam_date)))
                             .filter(Boolean);
@@ -215,7 +216,7 @@ const Allocation = () => {
         }
         const payload = { examDate, session, selectedYears, selectedRooms };
         try {
-            await axios.post('http://localhost:5000/api/allocation/save', payload);
+            await axios.post(`${API_BASE_URL}/api/allocation/save`, payload);
             alert("Selection saved successfully!");
         } catch (err) {
             alert("Failed to save selection.");
@@ -246,7 +247,7 @@ const Allocation = () => {
         }, 800);
 
         try {
-            const response = await axios.post('http://localhost:5000/api/allocation/generate', payload);
+            const response = await axios.post(`${API_BASE_URL}/api/allocation/generate`, payload);
             clearTimeout(t1);
             clearTimeout(t2);
             setAllocationProgress(100);
@@ -284,7 +285,7 @@ const Allocation = () => {
         }
 
         try {
-            await axios.delete('http://localhost:5000/api/allocation/delete', {
+            await axios.delete(`${API_BASE_URL}/api/allocation/delete`, {
                 data: { date: examDate, session }
             });
             setIsGenerated(false);

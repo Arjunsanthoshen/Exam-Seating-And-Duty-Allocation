@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminSidebar from "./AdminSidebar";
+import { API_BASE_URL } from "../../api/config";
 import { 
   FaEdit, FaTrash, FaBolt, FaCopy, FaCalendarAlt, 
    FaBook, FaCheck, FaSearch 
@@ -66,7 +67,7 @@ const ExamSchedule = () => {
 
     const fetchSchedules = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/exam-schedule');
+            const res = await axios.get(`${API_BASE_URL}/api/exam-schedule`);
             setSavedSchedules(Array.isArray(res.data) ? res.data : []);
         } catch (err) {
             console.error("Fetch failed", err?.response?.data || err);
@@ -110,9 +111,9 @@ const ExamSchedule = () => {
         try {
             const payload = { year, date, session, subjects, examNumber };
             if (editingId) {
-                await axios.put(`http://localhost:5000/api/exam-schedule/update/${editingId}`, payload);
+                await axios.put(`${API_BASE_URL}/api/exam-schedule/update/${editingId}`, payload);
             } else {
-                await axios.post('http://localhost:5000/api/exam-schedule/add', payload);
+                await axios.post(`${API_BASE_URL}/api/exam-schedule/add`, payload);
             }
             alert("Schedule Saved Successfully!");
             resetForm();
@@ -138,7 +139,7 @@ const ExamSchedule = () => {
 
     const handleDelete = async (id) => {
         if (window.confirm("Delete this scheduled exam entry?")) {
-            await axios.delete(`http://localhost:5000/api/exam-schedule/${id}`);
+            await axios.delete(`${API_BASE_URL}/api/exam-schedule/${id}`);
             fetchSchedules();
         }
     };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
+import { API_BASE_URL } from "../../api/config";
 import { FaChevronLeft, FaChevronRight, FaTrash, FaSpinner, FaCheckCircle } from "react-icons/fa";
 import "./GenerateDuties.css";
 
@@ -28,7 +29,7 @@ const GenerateDuties = () => {
 
   const fetchAllExamDates = useCallback(async () => {
     try {
-      const res = await axios.get("http://localhost:5000/api/exam-dates-only");
+      const res = await axios.get(`${API_BASE_URL}/api/exam-dates-only`);
       const dates = res.data.map(d => getYYYYMMDD(new Date(d.exam_date)));
       setAllExamDates(dates);
       
@@ -44,13 +45,13 @@ const GenerateDuties = () => {
   const fetchSummary = useCallback(async () => {
     if (!examDate) return;
     try {
-      const res = await axios.get(`http://localhost:5000/api/duties/summary`, {
+      const res = await axios.get(`${API_BASE_URL}/api/duties/summary`, {
         params: { date: examDate, session: session }
       });
       setSummary(res.data);
       
       if (res.data.isGenerated) {
-        const dRes = await axios.get(`http://localhost:5000/api/duties/list`, {
+        const dRes = await axios.get(`${API_BASE_URL}/api/duties/list`, {
           params: { date: examDate, session: session }
         });
         setDutyList(dRes.data);
@@ -69,7 +70,7 @@ const GenerateDuties = () => {
     if (type === 'delete') {
       if (!window.confirm("Delete this allocation? Faculty duty points will be restored.")) return;
       try {
-        await axios.delete("http://localhost:5000/api/duties/delete", { data: { date: examDate, session } });
+        await axios.delete(`${API_BASE_URL}/api/duties/delete`, { data: { date: examDate, session } });
         setIsProcessing(true);
         setProcessProgress(100);
         setProcessSuccess(true);
@@ -115,7 +116,7 @@ const GenerateDuties = () => {
     }, 800);
 
     try {
-      const response = await axios.post("http://localhost:5000/api/duties/generate", { date: examDate, session });
+      const response = await axios.post(`${API_BASE_URL}/api/duties/generate`, { date: examDate, session });
       clearTimeout(t1);
       clearTimeout(t2);
       setProcessProgress(100);

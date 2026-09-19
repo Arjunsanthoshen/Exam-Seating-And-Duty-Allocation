@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
+import { API_BASE_URL } from "../../api/config";
 import { 
   FaCheck, FaTimes, FaInbox, FaUserTie, 
   FaCalendarAlt, FaClock, FaCommentAlt 
@@ -29,13 +30,13 @@ const Requests = () => {
       try {
         setErrorMessage("");
 
-        const requestsResponse = await axios.get("http://localhost:5000/api/admin/requests");
+        const requestsResponse = await axios.get(`${API_BASE_URL}/api/admin/requests`);
 
         const fetchedRequests = Array.isArray(requestsResponse.data) ? requestsResponse.data : [];
         setRequests(fetchedRequests);
         setSelectedRequest(fetchedRequests[0] || null);
 
-        axios.post("http://localhost:5000/api/admin/requests/mark-read")
+        axios.post(`${API_BASE_URL}/api/admin/requests/mark-read`)
           .catch((error) => {
             console.error("Failed to mark requests as read", error);
           });
@@ -54,7 +55,7 @@ const Requests = () => {
     try {
       setProcessingId(request.unavailability_id);
       const response = await axios.post(
-        `http://localhost:5000/api/admin/requests/${request.unavailability_id}/decision`,
+        `${API_BASE_URL}/api/admin/requests/${request.unavailability_id}/decision`,
         { decision }
       );
 

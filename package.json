@@ -1,10 +1,15 @@
 {
   "name": "exam-seating-and-duty-allocation",
   "scripts": {
+    "start": "node backend/server.js",
     "backend": "node backend/server.js",
     "frontend": "npm start --prefix frontend",
     "dev:backend": "node backend/server.js",
-    "dev:frontend": "npm start --prefix frontend"
+    "dev:frontend": "npm start --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "db:init": "npm run db:init --prefix backend",
+    "db:seed": "npm run db:seed --prefix backend"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

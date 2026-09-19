@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../api/config';
 import {
   FaUserGraduate,
   FaIdBadge,
@@ -32,7 +33,7 @@ const StudentProfile = () => {
 
         const config = { headers: { Authorization: `Bearer ${token}` } };
 
-        axios.get('http://localhost:5000/api/student/profile', config)
+        axios.get(`${API_BASE_URL}/api/student/profile`, config)
             .then(res => {
                 setProfile(res.data || {});
                 setLoading(false);

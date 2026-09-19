@@ -7,6 +7,8 @@
     "start": "node server.js",
     "backend": "node server.js",
     "dev": "node server.js",
+    "db:init": "node database/init_db.js",
+    "db:seed": "node database/seed_dev.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -16,7 +18,9 @@
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
     "mysql2": "^3.17.1",
     "puppeteer": "^24.38.0",

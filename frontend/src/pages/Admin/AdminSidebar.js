@@ -6,6 +6,7 @@ import {
   FaFileAlt, FaInbox, FaSignOutAlt, FaShieldAlt
 } from "react-icons/fa";
 import axios from "axios";
+import { API_BASE_URL } from "../../api/config";
 import "./AdminSidebar.css";
 
 const AdminSidebar = () => {
@@ -18,7 +19,7 @@ const AdminSidebar = () => {
 
     const fetchCounts = async () => {
       try {
-        const response = await axios.get("http://localhost:5000/api/admin/requests/unread-count");
+        const response = await axios.get(`${API_BASE_URL}/api/admin/requests/unread-count`);
         if (isMounted) {
           setPendingCount(Number(response.data.pendingCount || response.data.unreadCount || 0));
         }

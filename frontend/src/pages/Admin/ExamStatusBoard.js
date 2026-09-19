@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
+import { API_BASE_URL } from "../../api/config";
 import { 
   FaCheckCircle, FaExclamationTriangle,
   FaClock, FaShieldAlt, FaCalendarAlt
@@ -45,7 +46,7 @@ function ExamStatusBoard() {
   useEffect(() => {
     const fetchStatusBoard = async () => {
       try {
-        const res = await axios.get("http://localhost:5000/api/exam-status-board");
+        const res = await axios.get(`${API_BASE_URL}/api/exam-status-board`);
         setStatusRows(res.data || []);
       } catch (error) {
         console.error("Failed to load exam status board", error);

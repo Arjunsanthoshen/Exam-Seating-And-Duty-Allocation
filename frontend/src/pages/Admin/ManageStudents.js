@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
+import { API_BASE_URL } from "../../api/config";
 import { 
   FaUserGraduate, FaPlus, FaMinus, FaEdit, FaTrash, 
   FaSearch, FaBolt, FaUsers
@@ -26,7 +27,7 @@ const ManageStudents = () => {
 
   const fetchStudents = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/api/students");
+      const res = await axios.get(`${API_BASE_URL}/api/students`);
       if (Array.isArray(res.data)) {
         setStudentList(res.data);
       }
@@ -42,11 +43,11 @@ const ManageStudents = () => {
 
     try {
       if (isEditing) {
-        await axios.put("http://localhost:5000/api/students/update", payload);
+        await axios.put(`${API_BASE_URL}/api/students/update`, payload);
         alert("Batch updated successfully!");
         resetForm();
       } else {
-        await axios.post("http://localhost:5000/api/students/add", payload);
+        await axios.post(`${API_BASE_URL}/api/students/add`, payload);
         alert("Batch added successfully!");
 
         const currentIndex = branchOrder.indexOf(branch);
@@ -75,7 +76,7 @@ const ManageStudents = () => {
   const handleDelete = async (y, b, bt) => {
     if (window.confirm(`Delete ${b} Batch ${bt} (Join Year ${y}) record?`)) {
       try {
-        await axios.delete(`http://localhost:5000/api/students/${y}/${b}/${bt}`);
+        await axios.delete(`${API_BASE_URL}/api/students/${y}/${b}/${bt}`);
         fetchStudents();
       } catch (err) {
         alert("Delete failed");

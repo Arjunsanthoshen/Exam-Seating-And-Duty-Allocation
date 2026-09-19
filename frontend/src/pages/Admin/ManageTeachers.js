@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
+import { API_BASE_URL } from "../../api/config";
 import { 
   FaUsers, FaUserPlus, FaFileExcel, FaDownload, 
   FaSearch, FaTrash, FaCheckCircle, FaTimesCircle,
@@ -33,7 +34,7 @@ const ManageTeachers = () => {
 
   const fetchTeachers = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/api/teachers");
+      const res = await axios.get(`${API_BASE_URL}/api/teachers`);
       setTeachers(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Failed to fetch teachers:", err);
@@ -52,7 +53,7 @@ const ManageTeachers = () => {
   const handleAddTeacher = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post("http://localhost:5000/api/teachers", form);
+      const res = await axios.post(`${API_BASE_URL}/api/teachers`, form);
       alert(res.data?.message || "Faculty member added successfully");
       fetchTeachers();
       setForm({
@@ -71,7 +72,7 @@ const ManageTeachers = () => {
   const handleDelete = async (username) => {
     if (!window.confirm(`Delete faculty member ${username}?`)) return;
     try {
-      const res = await axios.delete(`http://localhost:5000/api/teachers/${username}`);
+      const res = await axios.delete(`${API_BASE_URL}/api/teachers/${username}`);
       alert(res.data?.message || "Faculty member removed successfully");
       fetchTeachers();
     } catch (err) {
@@ -90,7 +91,7 @@ const ManageTeachers = () => {
     setUploadingExcel(true);
 
     try {
-      const res = await axios.post("http://localhost:5000/api/teachers/upload-excel", formData, {
+      const res = await axios.post(`${API_BASE_URL}/api/teachers/upload-excel`, formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
       alert(res.data?.message || "Excel batch uploaded successfully!");
@@ -105,7 +106,7 @@ const ManageTeachers = () => {
 
   const handleDownloadTemplate = async () => {
     try {
-      const response = await axios.get("http://localhost:5000/api/teachers/template", {
+      const response = await axios.get(`${API_BASE_URL}/api/teachers/template`, {
         responseType: "blob"
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -124,7 +125,7 @@ const ManageTeachers = () => {
   const handleToggleAvailability = async (teacher) => {
     const nextAvailability = teacher.availability === "Yes" ? "No" : "Yes";
     try {
-      await axios.put("http://localhost:5000/api/teachers/availability", {
+      await axios.put(`${API_BASE_URL}/api/teachers/availability`, {
         username: teacher.username,
         availability: nextAvailability
       });

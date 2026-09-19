@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../api/config";
 import "./Login.css"; // reuse the same style as login
 
 function Signup() {
@@ -16,7 +17,7 @@ function Signup() {
 
     try {
 
-      const res = await fetch("http://localhost:5000/api/signup", {
+      const res = await fetch(`${API_BASE_URL}/api/signup`, {
 
         method: "POST",
 

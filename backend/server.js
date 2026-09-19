@@ -8,22 +8,31 @@ const XLSX = require("xlsx");
 const path = require("path");
 const fs = require("fs");
 
-// Load environment variables from .env if present
+// Load environment variables (.env in backend or project root)
 try {
-    if (typeof process.loadEnvFile === "function" && fs.existsSync(path.join(__dirname, ".env"))) {
-        process.loadEnvFile(path.join(__dirname, ".env"));
+    const dotenv = require("dotenv");
+    if (fs.existsSync(path.join(__dirname, ".env"))) {
+        dotenv.config({ path: path.join(__dirname, ".env") });
+    } else if (fs.existsSync(path.join(__dirname, "..", ".env"))) {
+        dotenv.config({ path: path.join(__dirname, "..", ".env") });
+    } else {
+        dotenv.config();
     }
 } catch (envError) {
-    // Continue with environment defaults
+    if (typeof process.loadEnvFile === "function") {
+        try { process.loadEnvFile(); } catch (e) {}
+    }
 }
 
+const isProduction = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT) || 5000;
-const SECRET_KEY = process.env.JWT_SECRET || "super_secure_college_exam_management_jwt_secret_2026_key";
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-const DB_HOST = process.env.DB_HOST || "localhost";
-const DB_USER = process.env.DB_USER || "root";
-const DB_PASSWORD = process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : "tree";
-const DB_NAME = process.env.DB_NAME || "college";
+
+// Enforce JWT secret in production
+const SECRET_KEY = process.env.JWT_SECRET || (isProduction ? null : "super_secure_college_exam_management_jwt_secret_2026_key");
+if (!SECRET_KEY) {
+    console.error("FATAL: JWT_SECRET environment variable must be set in production mode.");
+    process.exit(1);
+}
 
 const BCRYPT_HASH_PREFIX = /^\$2[aby]\$\d{2}\$/;
 
@@ -54,7 +63,6 @@ const app = express();
 /* SECURITY HEADERS & MIDDLEWARE                                              */
 /* -------------------------------------------------------------------------- */
 
-// Security Response Headers
 app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
@@ -63,15 +71,33 @@ app.use((req, res, next) => {
     next();
 });
 
-// Strict CORS policy
-const allowedOrigins = [FRONTEND_URL, "http://localhost:3000", "http://127.0.0.1:3000"];
+// Configure CORS for production (Render frontend URL) and local development
+const configuredOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+const defaultAllowedOrigins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173"
+];
+
+const allowedOrigins = [...new Set([...configuredOrigins, ...defaultAllowedOrigins])];
+
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin) || origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
+        if (
+            allowedOrigins.includes(origin) ||
+            origin.startsWith("http://localhost:") ||
+            origin.startsWith("http://127.0.0.1:") ||
+            (!isProduction && origin.includes("localhost"))
+        ) {
             return callback(null, true);
         }
-        return callback(new Error("CORS policy: Not allowed by CORS"));
+        return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -149,26 +175,100 @@ if (!fs.existsSync(generatedReportsDir)) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* DATABASE CONNECTION                                                        */
+/* DATABASE CONNECTION (Supports Railway MySQL & Local Development)           */
 /* -------------------------------------------------------------------------- */
 
-const db = mysql.createPool({
-    host: DB_HOST,
-    user: DB_USER,
-    password: DB_PASSWORD,
-    database: DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+function getDatabasePoolConfig() {
+    // 1. Support Railway full connection URI (MYSQL_URL or DATABASE_URL)
+    const connectionUri = process.env.MYSQL_URL || process.env.DATABASE_URL;
+    if (connectionUri) {
+        try {
+            const url = new URL(connectionUri);
+            const poolConfig = {
+                host: url.hostname,
+                port: Number(url.port) || 3306,
+                user: decodeURIComponent(url.username),
+                password: decodeURIComponent(url.password),
+                database: url.pathname.replace(/^\//, ""),
+                waitForConnections: true,
+                connectionLimit: 10,
+                queueLimit: 0
+            };
+            if (process.env.DB_SSL === "true" || process.env.MYSQL_SSL === "true" || url.searchParams.get("ssl")) {
+                poolConfig.ssl = { rejectUnauthorized: false };
+            }
+            return poolConfig;
+        } catch (urlParseErr) {
+            return {
+                uri: connectionUri,
+                waitForConnections: true,
+                connectionLimit: 10,
+                queueLimit: 0
+            };
+        }
+    }
 
-// Test connection
+    // 2. Support Railway individual variables and standard variables
+    const host = process.env.MYSQLHOST || process.env.DB_HOST || "localhost";
+    const port = Number(process.env.MYSQLPORT || process.env.DB_PORT) || 3306;
+    const user = process.env.MYSQLUSER || process.env.DB_USER || "root";
+    const password = process.env.MYSQLPASSWORD !== undefined
+        ? process.env.MYSQLPASSWORD
+        : (process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : (isProduction ? "" : "tree"));
+    const database = process.env.MYSQLDATABASE || process.env.DB_NAME || "college";
+
+    const poolConfig = {
+        host,
+        port,
+        user,
+        password,
+        database,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+    };
+
+    if (process.env.DB_SSL === "true" || process.env.MYSQL_SSL === "true") {
+        poolConfig.ssl = { rejectUnauthorized: false };
+    }
+
+    return poolConfig;
+}
+
+const db = mysql.createPool(getDatabasePoolConfig());
+
+// Verify database connection on startup
 db.getConnection((err, connection) => {
     if (err) {
-        console.error("Database connection failed:", err);
+        console.error("Database connection error:", err.message);
     } else {
-        console.log("Connected to MySQL successfully!");
+        console.log("Connected to MySQL database pool successfully!");
         connection.release();
+    }
+});
+
+/* -------------------------------------------------------------------------- */
+/* HEALTH CHECK ENDPOINT                                                      */
+/* -------------------------------------------------------------------------- */
+
+app.get("/api/health", async (req, res) => {
+    try {
+        await db.promise().query("SELECT 1");
+        res.json({
+            status: "ok",
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            database: "connected",
+            environment: process.env.NODE_ENV || "development"
+        });
+    } catch (dbError) {
+        res.status(503).json({
+            status: "degraded",
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            database: "disconnected",
+            error: isProduction ? "Database connection error" : dbError.message
+        });
     }
 });
 
@@ -1446,13 +1546,13 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         await connection.query(
             `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
              VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId, "Hall-wise", formattedDate, hallWiseReportName, hallWiseFilePath]
+            [reportIdRow.nextReportId, "Hall-wise", formattedDate, hallWiseReportName, hallWiseFileName]
         );
 
         await connection.query(
             `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
              VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId + 1, "Total Seating", formattedDate, totalSeatingReportName, totalSeatingFilePath]
+            [reportIdRow.nextReportId + 1, "Total Seating", formattedDate, totalSeatingReportName, totalSeatingFileName]
         );
 
         await connection.commit();
@@ -2053,10 +2153,21 @@ function buildHallSeatingHtml(rows, examDate) {
 }
 
 async function renderPdfFromHtml(html) {
-    const browser = await puppeteer.launch({
+    const launchOptions = {
         headless: "new",
-        args: ["--no-sandbox", "--disable-setuid-sandbox"]
-    });
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu"
+        ]
+    };
+
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    const browser = await puppeteer.launch(launchOptions);
 
     try {
         const page = await browser.newPage();
@@ -2537,14 +2648,42 @@ app.get("/api/reports/:reportId/download", requireAuth, requireRole('admin'), as
             return res.status(404).json({ message: "Report file not found" });
         }
 
-        const resolvedPath = path.resolve(report.filepath);
-        const resolvedBaseDir = path.resolve(generatedReportsDir);
-        if (!resolvedPath.startsWith(resolvedBaseDir + path.sep) && resolvedPath !== resolvedBaseDir) {
-            return res.status(403).json({ message: "Access denied to requested file path" });
+        const baseFileName = path.basename(report.filepath);
+        const resolvedPath = path.join(generatedReportsDir, baseFileName);
+
+        if (!fs.existsSync(resolvedPath)) {
+            // Ephemeral file recovery: dynamically regenerate if missing from disk
+            const connection = await db.promise().getConnection();
+            try {
+                let pdfBuffer = null;
+                const formattedDate = safeFormatDate(report.exam_date);
+                if (report.report_type === "Invigilation Duty") {
+                    pdfBuffer = await generateInvigilationDutyPdfByExamDate(connection, formattedDate);
+                } else {
+                    const [examRows] = await connection.query(
+                        "SELECT exam_id FROM Exam_schedule WHERE DATE(exam_date) = ? LIMIT 1",
+                        [formattedDate]
+                    );
+                    if (examRows.length) {
+                        if (report.report_type === "Hall-wise") {
+                            pdfBuffer = await generateHallSeatingPdfByExamId(connection, examRows[0].exam_id, formattedDate);
+                        } else if (report.report_type === "Total Seating") {
+                            pdfBuffer = await generateTotalSeatingPdfByExamId(connection, examRows[0].exam_id, formattedDate);
+                        }
+                    }
+                }
+                if (pdfBuffer) {
+                    fs.writeFileSync(resolvedPath, pdfBuffer);
+                }
+            } catch (regenErr) {
+                console.error("Dynamic report regeneration error:", regenErr);
+            } finally {
+                connection.release();
+            }
         }
 
         if (!fs.existsSync(resolvedPath)) {
-            return res.status(404).json({ message: "Report file not found" });
+            return res.status(404).json({ message: "Report file not found and could not be regenerated" });
         }
 
         return res.download(resolvedPath, `${report.report_name}.pdf`);
@@ -2569,9 +2708,9 @@ app.delete("/api/reports/bulk", requireAuth, requireRole('admin'), async (req, r
 
         for (const row of rows) {
             if (row.filepath) {
-                const resolvedPath = path.resolve(row.filepath);
-                const resolvedBaseDir = path.resolve(generatedReportsDir);
-                if (resolvedPath.startsWith(resolvedBaseDir + path.sep) && fs.existsSync(resolvedPath)) {
+                const baseFileName = path.basename(row.filepath);
+                const resolvedPath = path.join(generatedReportsDir, baseFileName);
+                if (fs.existsSync(resolvedPath)) {
                     try { fs.unlinkSync(resolvedPath); } catch (e) {}
                 }
             }
@@ -2598,9 +2737,9 @@ app.delete("/api/reports/:id", requireAuth, requireRole('admin'), async (req, re
         );
 
         if (rows.length && rows[0].filepath) {
-            const resolvedPath = path.resolve(rows[0].filepath);
-            const resolvedBaseDir = path.resolve(generatedReportsDir);
-            if (resolvedPath.startsWith(resolvedBaseDir + path.sep) && fs.existsSync(resolvedPath)) {
+            const baseFileName = path.basename(rows[0].filepath);
+            const resolvedPath = path.join(generatedReportsDir, baseFileName);
+            if (fs.existsSync(resolvedPath)) {
                 try { fs.unlinkSync(resolvedPath); } catch (e) {}
             }
         }
@@ -3211,7 +3350,7 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
                 "Invigilation Duty",
                 formattedDate,
                 invigilationDutyReportName,
-                invigilationDutyFilePath
+                `${invigilationDutyReportName}.pdf`
             ]
         );
 
@@ -3357,6 +3496,18 @@ app.delete('/api/duties/delete', requireAuth, requireRole('admin'), async (req, 
 /* SERVER START & ERROR HANDLING               */
 /* -------------------------------------------------------------------------- */
 
+// Serve static frontend build in production if present (monolithic / container deployment)
+const frontendBuildPath = path.join(__dirname, "../frontend/build");
+if (fs.existsSync(frontendBuildPath)) {
+    app.use(express.static(frontendBuildPath));
+    app.get("*", (req, res, next) => {
+        if (req.path.startsWith("/api/")) {
+            return next();
+        }
+        res.sendFile(path.join(frontendBuildPath, "index.html"));
+    });
+}
+
 // 404 Catch-All Handler
 app.use((req, res) => {
     res.status(404).json({ message: "API endpoint not found" });
@@ -3370,8 +3521,9 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
     console.log("-------------------------------------------");
-    console.log(` Server running on http://localhost:${PORT} `);
+    console.log(` Server running on http://0.0.0.0:${PORT} `);
+    console.log(` Health check at http://0.0.0.0:${PORT}/api/health `);
     console.log("-------------------------------------------");
 });

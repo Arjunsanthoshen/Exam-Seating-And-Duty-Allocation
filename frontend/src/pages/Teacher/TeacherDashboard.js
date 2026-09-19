@@ -14,6 +14,7 @@ import {
   FaExclamationCircle,
   FaUserShield
 } from "react-icons/fa";
+import { API_BASE_URL } from "../../api/config";
 import "./TeacherDashboard.css";
 
 const LiveClock = React.memo(() => {
@@ -86,7 +87,7 @@ const TeacherDashboard = () => {
     }
 
     axios
-      .get("http://localhost:5000/api/teacher/dashboard", {
+      .get(`${API_BASE_URL}/api/teacher/dashboard`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       .then((response) => {
@@ -171,7 +172,7 @@ const TeacherDashboard = () => {
     setChangingPassword(true);
 
     axios.post(
-      "http://localhost:5000/api/teacher/change-password",
+      `${API_BASE_URL}/api/teacher/change-password`,
       passwordForm,
       { headers: { Authorization: `Bearer ${token}` } }
     ).then((response) => {
@@ -204,7 +205,7 @@ const TeacherDashboard = () => {
     setSubmittingRequest(true);
 
     axios.post(
-      "http://localhost:5000/api/teacher/unavailability",
+      `${API_BASE_URL}/api/teacher/unavailability`,
       formData,
       { headers: { Authorization: `Bearer ${token}` } }
     ).then(() => {

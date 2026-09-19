@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminSidebar from './AdminSidebar'; 
+import { API_BASE_URL } from '../../api/config';
 import { 
   FaDoorOpen, FaPlus, FaMinus, FaEdit, FaTrash, 
   FaBuilding, FaChair, FaBolt, FaLayerGroup 
@@ -42,7 +43,7 @@ const ManageRooms = () => {
 
     const fetchBlocks = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/blocks');
+            const res = await axios.get(`${API_BASE_URL}/api/blocks`);
             setBlocks(Array.isArray(res.data) ? res.data : []);
         } catch (err) {
             console.error("Error fetching blocks", err);
@@ -55,7 +56,7 @@ const ManageRooms = () => {
     const handleAddBlock = async () => {
         if (!newBlockName.trim()) return alert("Enter a block name");
         try {
-            await axios.post('http://localhost:5000/api/blocks', { block_name: newBlockName.toUpperCase() });
+            await axios.post(`${API_BASE_URL}/api/blocks`, { block_name: newBlockName.toUpperCase() });
             setNewBlockName("");
             fetchBlocks();
             alert("Block added successfully!");
@@ -68,7 +69,7 @@ const ManageRooms = () => {
         if (!newBlockName.trim()) return alert("Enter block name to delete");
         if (window.confirm(`Delete block ${newBlockName.toUpperCase()}?`)) {
             try {
-                await axios.delete(`http://localhost:5000/api/blocks/${newBlockName.toUpperCase()}`);
+                await axios.delete(`${API_BASE_URL}/api/blocks/${newBlockName.toUpperCase()}`);
                 setNewBlockName("");
                 fetchBlocks();
                 alert("Block removed successfully!");
@@ -80,7 +81,7 @@ const ManageRooms = () => {
 
     const fetchRooms = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/rooms');
+            const res = await axios.get(`${API_BASE_URL}/api/rooms`);
             setRooms(Array.isArray(res.data) ? res.data : []);
         } catch (err) {
             console.error("Error fetching rooms", err);
@@ -117,7 +118,7 @@ const ManageRooms = () => {
     const handleSave = async () => {
         if (!formData.room_no || !formData.block) return alert("Please specify both Block and Room Number");
         try {
-            await axios.post('http://localhost:5000/api/rooms', formData);
+            await axios.post(`${API_BASE_URL}/api/rooms`, formData);
             alert("Room configuration saved successfully!");
             setFormData({
                 block: '', room_no: '', capacity: 0, cap_per_bench: 1,
@@ -137,7 +138,7 @@ const ManageRooms = () => {
     const handleDelete = async (block, room_no) => {
         if (window.confirm(`Are you sure you want to delete room ${room_no} in block ${block}?`)) {
             try {
-                await axios.delete(`http://localhost:5000/api/rooms/${block}/${room_no}`);
+                await axios.delete(`${API_BASE_URL}/api/rooms/${block}/${room_no}`);
                 alert("Room deleted successfully");
                 fetchRooms(); 
             } catch (err) {

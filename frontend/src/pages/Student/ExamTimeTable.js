@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../api/config';
 import {
   FaCalendarAlt,
   FaClock,
@@ -35,7 +36,7 @@ const ExamTimeTable = () => {
 
         const fetchData = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/student/exams', config);
+                const res = await axios.get(`${API_BASE_URL}/api/student/exams`, config);
                 setExams(Array.isArray(res.data) ? res.data : []);
             } catch (err) {
                 if (err.response && (err.response.status === 401 || err.response.status === 403)) {
