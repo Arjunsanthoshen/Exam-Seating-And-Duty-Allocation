@@ -137,18 +137,19 @@ PDF generation uses [Puppeteer](https://pptr.dev/) which requires a Chromium bin
 
 Render's **free tier web services** have an ephemeral filesystem: the `~/.cache` home directory (where Puppeteer defaults to storing Chrome) **is not guaranteed to persist** from the build container to the running container. This causes `chrome not found` errors at runtime even though the build succeeded.
 
-### The fix (`backend/.puppeteerrc.cjs` + `PUPPETEER_CACHE_DIR`)
+### The fix (`backend/scripts/install-chrome.js` + in-project cache)
 
-`backend/.puppeteerrc.cjs` redirects Puppeteer's cache directory to `backend/.cache/puppeteer` — **inside the project directory** at `/opt/render/project/src/backend/.cache/puppeteer`. This path IS preserved from build to runtime.
+1. `backend/scripts/install-chrome.js` explicitly sets `PUPPETEER_CACHE_DIR` to `backend/.cache/puppeteer` and installs Chrome. This guarantees Chrome is written to `/opt/render/project/src/backend/.cache/puppeteer`, which survives the container transition.
+2. Both `.puppeteerrc.cjs` (root) and `backend/.puppeteerrc.cjs` point to `backend/.cache/puppeteer`.
+3. In `backend/server.js`, `PUPPETEER_CACHE_DIR` is initialized to `path.resolve(__dirname, ".cache", "puppeteer")` at the very top before Puppeteer is loaded, ensuring that running `node backend/server.js` from the repository root always resolves the in-project cache.
+4. `server.js` features a multi-tiered fallback resolver (`resolveChromeExecutable`) that inspects the in-project cache, user cache, and system Chromium paths before launching.
 
-The `render.yaml` `envVars` also sets `PUPPETEER_CACHE_DIR` to the same path as a belt-and-suspenders override for Puppeteer's CLI browser installer.
-
-The `buildCommand` in `render.yaml` explicitly runs `npx --prefix backend puppeteer browsers install chrome` after `npm install` to ensure Chrome is always installed to the correct location, even if the `postinstall` hook was skipped.
+The `buildCommand` in `render.yaml` runs `node backend/scripts/install-chrome.js` to ensure Chrome is always installed to this exact location during build.
 
 ### Troubleshooting PDF generation failures
 
 If PDF generation fails on Render, check the service logs for `[PDF]` lines:
-- **`Chrome binary not found at: ...`** — Chrome was not installed to the expected path during build. Re-deploy the service (triggering a fresh build) and verify the build log shows a successful `puppeteer browsers install chrome` step.
-- **`[PDF] Launching Chrome: /opt/render/project/src/backend/.cache/puppeteer/chrome/...`** — Chrome found and PDF generation attempted successfully.
+- **`[PDF] Chrome executable could not be found...`** — Chrome was not installed to the expected path during build. Re-deploy the service (triggering a fresh build) and verify the build log shows `[Puppeteer Install] Chrome successfully installed into: /opt/render/project/src/backend/.cache/puppeteer`.
+- **`[PDF] Launching Chrome: /opt/render/project/src/backend/.cache/puppeteer/chrome/...`** — Chrome found and PDF generation initialized successfully.
 
 To manually override the Chrome path (e.g. to use a system-installed Chromium), set the `PUPPETEER_EXECUTABLE_PATH` environment variable in the Render dashboard.

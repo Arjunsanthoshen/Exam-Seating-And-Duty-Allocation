@@ -3,7 +3,7 @@ services:
     name: exam-allocation
     env: node
     plan: free
-    buildCommand: npm install && npm install --prefix backend && npm install --prefix frontend && npm run build && cd backend && npx puppeteer browsers install chrome
+    buildCommand: npm install && npm install --prefix backend && npm install --prefix frontend && npm run build && node backend/scripts/install-chrome.js
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:

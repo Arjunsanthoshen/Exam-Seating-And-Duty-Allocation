@@ -7,6 +7,14 @@ const multer = require("multer");
 const XLSX = require("xlsx");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
+
+// Ensure PUPPETEER_CACHE_DIR points to backend/.cache/puppeteer before Puppeteer is loaded,
+// regardless of whether the server is started from the repository root or the backend directory.
+const IN_PROJECT_PUPPETEER_CACHE_DIR = path.resolve(__dirname, ".cache", "puppeteer");
+if (!process.env.PUPPETEER_CACHE_DIR) {
+    process.env.PUPPETEER_CACHE_DIR = IN_PROJECT_PUPPETEER_CACHE_DIR;
+}
 
 // Load environment variables (.env in backend or project root)
 try {
@@ -2152,28 +2160,95 @@ function buildHallSeatingHtml(rows, examDate) {
     return html;
 }
 
-async function renderPdfFromHtml(html) {
-    // Resolve Chrome executable:
-    //   1. PUPPETEER_EXECUTABLE_PATH env var (manual override, e.g. system chromium)
-    //   2. puppeteer.executablePath() — reads .puppeteerrc.cjs which points the
-    //      cache into backend/.cache/puppeteer (inside the project directory).
-    //      This path survives Render's build→runtime transition, unlike ~/.cache.
-    const executablePath =
-        process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
+function findChromeInDir(baseDir) {
+    if (!baseDir || !fs.existsSync(baseDir)) return null;
+    const candidates = [];
+    function scan(dir, depth) {
+        if (depth > 5) return;
+        try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    scan(fullPath, depth + 1);
+                } else if (entry.isFile() && (entry.name === "chrome" || entry.name === "chrome.exe")) {
+                    try {
+                        fs.accessSync(fullPath, fs.constants.X_OK);
+                        candidates.push(fullPath);
+                    } catch (e) {
+                        candidates.push(fullPath);
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+    scan(baseDir, 0);
+    return candidates.length > 0 ? candidates[0] : null;
+}
 
-    // Pre-flight: verify the binary actually exists before attempting to launch.
-    // This gives a clear, actionable error in logs instead of a cryptic ENOENT.
-    if (!fs.existsSync(executablePath)) {
-        const cacheDir = process.env.PUPPETEER_CACHE_DIR || "(default)";
+function resolveChromeExecutable() {
+    // 1. Explicit override via environment variable
+    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    // 2. Puppeteer's native resolution
+    try {
+        const pptrPath = puppeteer.executablePath();
+        if (pptrPath && fs.existsSync(pptrPath)) {
+            return pptrPath;
+        }
+    } catch (e) {}
+
+    // 3. Scan the in-project cache directory (backend/.cache/puppeteer)
+    const inProjectChrome = findChromeInDir(IN_PROJECT_PUPPETEER_CACHE_DIR);
+    if (inProjectChrome) {
+        return inProjectChrome;
+    }
+
+    // 4. Scan user's home cache directory (~/.cache/puppeteer)
+    try {
+        const homeDir = os.homedir();
+        const homeCache = path.join(homeDir, ".cache", "puppeteer");
+        const homeChrome = findChromeInDir(homeCache);
+        if (homeChrome) {
+            return homeChrome;
+        }
+    } catch (e) {}
+
+    // 5. Standard system Chromium / Google Chrome installations
+    const systemCandidates = [
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser"
+    ];
+    for (const cand of systemCandidates) {
+        if (fs.existsSync(cand)) {
+            return cand;
+        }
+    }
+
+    return null;
+}
+
+async function renderPdfFromHtml(html) {
+    const executablePath = resolveChromeExecutable();
+
+    if (!executablePath) {
+        const attemptedPptr = (() => {
+            try { return puppeteer.executablePath(); } catch (e) { return `(error: ${e.message})`; }
+        })();
         console.error(
-            `[PDF] Chrome binary not found at: ${executablePath}\n` +
-            `  PUPPETEER_CACHE_DIR=${cacheDir}\n` +
-            `  Ensure 'puppeteer browsers install chrome' ran during build and\n` +
-            `  that PUPPETEER_CACHE_DIR points inside the project directory.`
+            `[PDF] Chrome executable could not be found.\n` +
+            `  PUPPETEER_CACHE_DIR: ${process.env.PUPPETEER_CACHE_DIR}\n` +
+            `  puppeteer.executablePath(): ${attemptedPptr}\n` +
+            `  in-project cache checked: ${IN_PROJECT_PUPPETEER_CACHE_DIR}\n` +
+            `  Ensure Chrome is installed via 'node backend/scripts/install-chrome.js' during build.`
         );
         throw new Error(
-            `Chrome executable not found at "${executablePath}". ` +
-            "PDF generation is unavailable. Check server logs for details."
+            `Chrome executable not found. PDF generation is unavailable. ` +
+            `Searched in-project cache (${IN_PROJECT_PUPPETEER_CACHE_DIR}), ~/.cache, and system paths. Check server logs.`
         );
     }
 

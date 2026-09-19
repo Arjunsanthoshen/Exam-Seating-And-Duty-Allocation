@@ -9,7 +9,8 @@
     "build": "npm run build --prefix frontend",
     "build:frontend": "npm run build --prefix frontend",
     "db:init": "npm run db:init --prefix backend",
-    "db:seed": "npm run db:seed --prefix backend"
+    "db:seed": "npm run db:seed --prefix backend",
+    "install:chrome": "node backend/scripts/install-chrome.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
