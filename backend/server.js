@@ -2153,8 +2153,15 @@ function buildHallSeatingHtml(rows, examDate) {
 }
 
 async function renderPdfFromHtml(html) {
+    // Resolve Chrome executable: prefer explicit env override, then fall back to
+    // puppeteer.executablePath() which correctly locates the bundled Chrome on
+    // both local machines and Render's cache directory.
+    const executablePath =
+        process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
+
     const launchOptions = {
         headless: "new",
+        executablePath,
         args: [
             "--no-sandbox",
             "--disable-setuid-sandbox",
@@ -2162,10 +2169,6 @@ async function renderPdfFromHtml(html) {
             "--disable-gpu"
         ]
     };
-
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    }
 
     const browser = await puppeteer.launch(launchOptions);
 
