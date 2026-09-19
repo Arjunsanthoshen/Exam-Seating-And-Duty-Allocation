@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 * {
   box-sizing: border-box;
@@ -7,40 +7,112 @@
 }
 
 .login-wrapper {
-  height: 100vh;
+  min-height: 100vh;
   width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  font-family: 'Inter', sans-serif;
-  padding: 20px;
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 36px 20px;
+}
+
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 520px;
+}
+
+.login-outside-header {
+  text-align: center;
+  margin-bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.brand-badge-outer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  color: #e0e7ff;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin-bottom: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.brand-badge-icon {
+  font-size: 14px;
+  color: #a5b4fc;
+}
+
+.login-main-title {
+  font-size: 34px;
+  font-weight: 900;
+  color: #ffffff;
+  margin-bottom: 8px;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-shadow: 0 3px 15px rgba(0, 0, 0, 0.4);
+  text-align: center;
+}
+
+.login-main-subtitle {
+  font-size: 15px;
+  color: #c7d2fe;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-align: center;
 }
 
 .login-card {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
   width: 100%;
-  max-width: 420px;
-  padding: 40px;
-  border-radius: 16px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  padding: 36px 36px;
+  border-radius: 20px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.4);
+  transition: transform 0.2s ease;
 }
 
-.login-header {
+.login-card-header {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 22px;
 }
 
-.login-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin-bottom: 8px;
+.login-card-header h2 {
+  font-size: 21px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 4px;
+  letter-spacing: -0.02em;
 }
 
-.login-header p {
-  font-size: 14px;
-  color: #666;
+.login-card-header p {
+  font-size: 13.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.login-error-alert {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  text-align: center;
 }
 
 .login-form {
@@ -53,87 +125,107 @@
   display: flex;
   flex-direction: column;
   text-align: left;
+  gap: 8px;
 }
 
 .form-group label {
   font-size: 13px;
-  font-weight: 500;
-  color: #444;
-  margin-bottom: 8px;
+  font-weight: 600;
+  color: #334155;
+  letter-spacing: 0.01em;
+}
+
+/* Role Selector Pills */
+.role-selector-pills {
+  display: flex;
+  gap: 8px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.role-pill {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.role-pill:hover {
+  color: #1e293b;
+}
+
+.role-pill.active {
+  background: #764ba2;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(118, 75, 162, 0.35);
 }
 
 .form-control {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid #e1e1e1;
-  border-radius: 8px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
   font-size: 14px;
-  background-color: #f9f9f9;
-  transition: all 0.3s ease;
+  color: #1e293b;
+  background-color: #ffffff;
+  transition: all 0.2s ease;
   outline: none;
 }
 
 .form-control:focus {
   border-color: #764ba2;
-  background-color: #fff;
-  box-shadow: 0 0 0 4px rgba(118, 75, 162, 0.1);
+  box-shadow: 0 0 0 3.5px rgba(118, 75, 162, 0.18);
 }
 
 .login-btn {
   width: 100%;
-  padding: 14px;
+  padding: 13px;
   background: #764ba2;
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 16px;
+  border-radius: 10px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.3s ease, transform 0.2s ease;
-  margin-top: 10px;
+  transition: all 0.2s ease;
+  margin-top: 6px;
+  box-shadow: 0 4px 12px rgba(118, 75, 162, 0.35);
 }
 
-.login-btn:hover {
-  background: #5d3b82;
+.login-btn:hover:not(:disabled) {
+  background: #60388a;
   transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(118, 75, 162, 0.4);
 }
 
-.login-footer {
-    text-align: center;
-    margin-top: 25px;
-    font-size: 13px;
-    color: #888;
-}
-
-/* --- ADDED THIS SECTION TO FIX THE BUTTON --- */
-.link-btn {
-    background: none;
-    border: none;
-    color: #764ba2;
-    font-weight: 600;
-    cursor: pointer;
-    font-size: inherit;
-    font-family: inherit;
-    padding: 0;
-}
-
-.link-btn:hover {
-    text-decoration: underline;
-    color: #5d3b82;
+.login-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .signup-link {
   text-align: center;
-  margin-top: 15px;
-  font-size: 14px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: #64748b;
 }
 
 .create-account {
-  color: #6a4fb3;
+  color: #764ba2;
   font-weight: 600;
   cursor: pointer;
+  transition: color 0.2s ease;
 }
 
 .create-account:hover {
+  color: #532d7a;
   text-decoration: underline;
 }

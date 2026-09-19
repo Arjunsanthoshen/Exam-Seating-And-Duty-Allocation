@@ -1,270 +1,173 @@
-/* 1. Dashboard Layout */
-.dashboard-container {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
-  background: linear-gradient(135deg, #7ba6dc 0%, #5b87c4 100%);
-  overflow: hidden;
-}
+/* ==========================================================================
+   ADMIN MANAGE STUDENTS — MODERN GLASSMORPHIC AESTHETIC
+   ========================================================================== */
 
-.main-content {
-  flex: 1;
-  padding: 40px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center; /* Centers the card horizontally */
-}
-
-/* 2. The White Card */
-.manage-card {
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 45px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  width: 95%;
-  max-width: 1300px;
-  margin-top: 10px;
-  box-sizing: border-box;
-}
-
-.card-title { 
-  color: #3d5d8a; 
-  margin-bottom: 35px; 
-  font-size: 1.7rem; 
-  font-weight: 700;
-  border-left: 6px solid #7ba6dc;
-  padding-left: 20px;
-}
-
-/* 3. Form Section */
-.form-section {
-  background-color: #ffffff;
-  padding: 30px;
-  border-radius: 15px;
-  border: 2px solid #cbd5e0; /* Crisper border */
-  margin-bottom: 40px;
-}
-
-.input-grid {
-  display: flex;
-  gap: 25px;
-  align-items: flex-end; /* Aligns buttons with inputs */
-}
-
-.input-box { 
-  display: flex; 
-  flex-direction: column; 
-  gap: 12px; 
-  flex: 1; 
-}
-
-.input-box label { 
-  font-weight: 700; 
-  color: #4a5568; 
-  font-size: 0.95rem; 
-}
-
-/* 4. Custom Component: Year Stepper */
-.year-stepper {
+/* Year Stepper */
+.student-year-stepper {
   display: flex;
   align-items: center;
-  border: 2px solid #cbd5e0;
-  border-radius: 12px;
-  overflow: hidden;
-  height: 50px;
-}
-
-.step-btn {
-  background-color: #f1f5f9;
-  border: none;
-  color: #5b87c4;
-  width: 50px;
-  height: 100%;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.step-btn:hover:not(:disabled) {
-  background-color: #cbd5e0;
-  color: #3d5d8a;
-}
-
-.step-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.year-input {
-  flex: 1;
-  border: none;
-  text-align: center;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #3d5d8a;
-  width: 80px;
-  background: white;
-  outline: none;
-}
-
-/* 5. Custom Component: Batch Selector (A, B, C) */
-.batch-selector {
-  display: flex;
   gap: 8px;
-  background: #f1f5f9;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
   padding: 5px;
-  border-radius: 12px;
-  border: 2px solid #cbd5e0;
-  height: 50px;
-  box-sizing: border-box;
 }
 
-.batch-btn {
-  flex: 1;
+.student-year-stepper .step-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   border: none;
-  background: transparent;
-  color: #64748b;
-  font-weight: 700;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.batch-btn.active {
-  background: #5b87c4;
-  color: white;
-  box-shadow: 0 2px 6px rgba(91, 135, 196, 0.3);
-}
-
-.batch-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-/* 6. General Inputs */
-.main-input {
-  padding: 0 15px;
-  font-size: 1rem;
-  border: 2px solid #cbd5e0;
-  border-radius: 12px;
-  height: 50px;
-  background-color: #ffffff;
-  transition: all 0.3s;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.main-input:focus {
-  border-color: #7ba6dc;
-  outline: none;
-  box-shadow: 0 0 0 4px rgba(123, 166, 220, 0.15);
-}
-
-/* 7. Action Buttons */
-.button-group {
-  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
   display: flex;
-  gap: 12px;
-}
-
-.submit-batch-btn {
-  height: 50px;
-  padding: 0 35px;
-  background: #5b87c4;
-  color: white;
-  border: none;
-  border-radius: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 6px 15px rgba(91, 135, 196, 0.3);
-  transition: all 0.3s ease;
-  white-space: nowrap;
-}
-
-.submit-batch-btn:hover {
-  background: #3d5d8a;
-  transform: translateY(-2px);
-}
-
-.cancel-btn {
-  height: 50px;
-  padding: 0 20px;
-  background: #e2e8f0;
-  color: #4a5568;
-  border: none;
-  border-radius: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-/* 8. Table Design - Centered Alignment */
-.table-section {
-  border: 1px solid #cbd5e0;
-  border-radius: 15px;
-  overflow: hidden;
-  background: white;
-}
-
-.student-table { 
-  width: 100%; 
-  border-collapse: collapse;
-}
-
-.student-table th { 
-  background: #f1f5f9; 
-  text-align: center; /* Centered headings */
-  padding: 22px; 
-  color: #3d5d8a; 
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 0.85rem;
-  letter-spacing: 1px;
-  border-bottom: 2px solid #cbd5e0;
-}
-
-.student-table td { 
-  padding: 18px; 
-  text-align: center; /* Centered values */
-  border-bottom: 1px solid #e2e8f0; 
-  color: #2d3748;
-}
-
-.batch-td {
-  font-weight: 800;
-  color: #5b87c4; /* Highlights the Batch letter */
-}
-
-.student-table tr:hover {
-  background-color: #f8fafc;
-}
-
-/* Actions Column */
-.action-cell { 
-  display: flex; 
-  gap: 45px; 
   align-items: center;
   justify-content: center;
-  min-height: 50px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.edit-btn { 
-  color: #7ba6dc; 
-  cursor: pointer; 
-  font-size: 1.3rem; 
-  transition: 0.2s;
+.student-year-stepper .step-btn:hover:not(:disabled) {
+  background: #2563eb;
+  color: #ffffff;
 }
 
-.delete-btn { 
-  color: #e74c3c; 
-  cursor: pointer; 
-  font-size: 1.2rem; 
-  transition: 0.2s;
+.student-year-stepper .step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
-.edit-btn:hover, .delete-btn:hover {
-  transform: scale(1.25);
+.student-year-stepper .year-display {
+  flex: 1;
+  text-align: center;
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: #f1f5f9;
+}
+
+/* Table Headers & Small Table Styling */
+.admin-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.admin-modern-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+
+.admin-modern-table th {
+  padding: 12px 18px !important;
+  font-size: 0.8rem !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: #e2e8f0 !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.1) !important;
+  text-align: left;
+}
+
+.admin-modern-table tbody tr {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.admin-modern-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.admin-modern-table td {
+  padding: 14px 18px;
+  font-size: 0.91rem;
+  color: #cbd5e1;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.admin-modern-table td:first-child {
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+
+.admin-modern-table td:last-child {
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.year-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  color: #93c5fd;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.branch-tag {
+  color: #f1f5f9;
+  font-weight: 800;
+}
+
+.code-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.strength-tag {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.status-chip.active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.th-center {
+  text-align: center !important;
+}
+
+.td-center {
+  text-align: center !important;
+}
+
+.td-center > div,
+.td-center > span,
+.td-center .table-actions-group,
+.td-center .capacity-pill-tag,
+.td-center .year-badge,
+.td-center .code-pill-tag,
+.td-center .admin-ready-tag {
+  display: inline-flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  margin: 0 auto;
 }

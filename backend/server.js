@@ -8,24 +8,109 @@ const XLSX = require("xlsx");
 const path = require("path");
 const fs = require("fs");
 
-const SECRET_KEY = "my_super_secret_key";
+// Load environment variables from .env if present
+try {
+    if (typeof process.loadEnvFile === "function" && fs.existsSync(path.join(__dirname, ".env"))) {
+        process.loadEnvFile(path.join(__dirname, ".env"));
+    }
+} catch (envError) {
+    // Continue with environment defaults
+}
+
+const PORT = Number(process.env.PORT) || 5000;
+const SECRET_KEY = process.env.JWT_SECRET || "super_secure_college_exam_management_jwt_secret_2026_key";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const DB_HOST = process.env.DB_HOST || "localhost";
+const DB_USER = process.env.DB_USER || "root";
+const DB_PASSWORD = process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : "tree";
+const DB_NAME = process.env.DB_NAME || "college";
 
 const BCRYPT_HASH_PREFIX = /^\$2[aby]\$\d{2}\$/;
 
+const BRANCH_MAP = {
+    "CS": "CSE",
+    "CSE": "CSE",
+    "EC": "ECE",
+    "ECE": "ECE",
+    "EE": "EEE",
+    "EEE": "EEE",
+    "ME": "ME",
+    "CE": "CE",
+    "IT": "IT",
+    "AD": "AI",
+    "AI": "AI",
+    "CY": "CY"
+};
+
+function canonicalBranch(b) {
+    if (!b) return "";
+    const upper = String(b).trim().toUpperCase();
+    return BRANCH_MAP[upper] || upper;
+}
 
 const app = express();
 
 /* -------------------------------------------------------------------------- */
-/* MIDDLEWARE                                 */
+/* SECURITY HEADERS & MIDDLEWARE                                              */
 /* -------------------------------------------------------------------------- */
 
-app.use(cors());
-app.use(express.json());
-app.use(express.json());
+// Security Response Headers
+app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    next();
+});
+
+// Strict CORS policy
+const allowedOrigins = [FRONTEND_URL, "http://localhost:3000", "http://127.0.0.1:3000"];
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin) || origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
+            return callback(null, true);
+        }
+        return callback(new Error("CORS policy: Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 /* -------------------------------------------------------------------------- */
-/* DATABASE CONNECTION                             */
-/*                              FILE UPLOAD SETUP                             */
+/* AUTHENTICATION RATE LIMITING                                               */
+/* -------------------------------------------------------------------------- */
+
+const authRateLimits = new Map();
+function authRateLimiter(req, res, next) {
+    const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000; // 15 minutes
+    const maxAttempts = 30;
+
+    let record = authRateLimits.get(ip);
+    if (!record || now - record.startTime > windowMs) {
+        record = { count: 1, startTime: now };
+        authRateLimits.set(ip, record);
+        return next();
+    }
+
+    record.count++;
+    if (record.count > maxAttempts) {
+        return res.status(429).json({
+            message: "Too many authentication attempts. Please try again after 15 minutes."
+        });
+    }
+
+    next();
+}
+
+/* -------------------------------------------------------------------------- */
+/* FILE UPLOAD & DIRECTORY SETUP                                              */
 /* -------------------------------------------------------------------------- */
 
 const uploadDir = path.join(__dirname, "uploads_files");
@@ -41,24 +126,37 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+        const safeExt = path.extname(file.originalname).toLowerCase();
+        cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${safeExt}`);
     }
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (![".xlsx", ".xls"].includes(ext)) {
+            return cb(new Error("Only Excel spreadsheets (.xlsx, .xls) are allowed"));
+        }
+        cb(null, true);
+    }
+});
 
 const generatedReportsDir = path.join(__dirname, "generated_reports");
 if (!fs.existsSync(generatedReportsDir)) {
     fs.mkdirSync(generatedReportsDir, { recursive: true });
 }
+
 /* -------------------------------------------------------------------------- */
-/*                            DATABASE CONNECTION                             */
+/* DATABASE CONNECTION                                                        */
 /* -------------------------------------------------------------------------- */
+
 const db = mysql.createPool({
-    host: "localhost",
-    user: "root",
-    password: "tree",
-    database: "college",
+    host: DB_HOST,
+    user: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -70,38 +168,82 @@ db.getConnection((err, connection) => {
         console.error("Database connection failed:", err);
     } else {
         console.log("Connected to MySQL successfully!");
-        connection.release(); // VERY IMPORTANT
+        connection.release();
     }
 });
 
 const recentDutyAssignments = new Map();
 
 function getDutySlotKey(date, session) {
-    return `${date}_${session}`;}
+    return `${date}_${session}`;
+}
 
-function verifyRequestToken(req, res, expectedRole) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+function formatStudentUsername(year, branch, batch, rollNo, maxStrength = 0) {
+    const padLength = Number(maxStrength) >= 100 ? 3 : 2;
+    const paddedRoll = String(rollNo).padStart(padLength, '0');
+    return `${year}_${branch}_${batch}_${paddedRoll}`;
+}
+
+function safeFormatDate(dateInput) {
+    if (!dateInput) return null;
+    if (typeof dateInput === "string") {
+        const trimmed = dateInput.trim();
+        const strMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (strMatch) {
+            const y = parseInt(strMatch[1], 10);
+            const m = parseInt(strMatch[2], 10);
+            const d = parseInt(strMatch[3], 10);
+            if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+                return `${strMatch[1]}-${strMatch[2]}-${strMatch[3]}`;
+            }
+        }
+    }
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return null;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* AUTHENTICATION & RBAC MIDDLEWARE                                           */
+/* -------------------------------------------------------------------------- */
+
+function requireAuth(req, res, next) {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
 
     if (!token) {
-        res.status(401).json({ message: "No token provided" });
-        return null;
+        return res.status(401).json({ message: "Authentication required. Please log in." });
     }
 
-    try {
-        const user = jwt.verify(token, SECRET_KEY);
-
-        if (expectedRole && String(user.role || '').toLowerCase() !== String(expectedRole).toLowerCase()) {
-            res.status(403).json({ message: `Role must be '${expectedRole}'` });
-            return null;
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) {
+            return res.status(401).json({ message: "Invalid or expired session token." });
         }
-
-        return user;
-    } catch (error) {
-        res.status(403).json({ message: "Invalid token" });
-        return null;
-    }
+        req.user = user;
+        next();
+    });
 }
+
+function requireRole(...allowedRoles) {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ message: "Authentication required." });
+        }
+        const userRole = String(req.user.role || "").trim().toLowerCase();
+        const normalizedAllowed = allowedRoles.map(r => r.trim().toLowerCase());
+
+        if (!normalizedAllowed.includes(userRole)) {
+            return res.status(403).json({
+                message: `Forbidden: Access requires role '${allowedRoles.join(" or ")}'. Your role is '${req.user.role}'.`
+            });
+        }
+        next();
+    };
+}
+
 
 async function ensureRequestTables() {
     await db.promise().query(`
@@ -140,82 +282,200 @@ ensureRequestTables().catch((error) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* STUDENT MANAGEMENT ROUTES                           */
+/* STUDENT MANAGEMENT ROUTES                                                  */
 /* -------------------------------------------------------------------------- */
-app.get('/api/students', (req, res) => {
-
+app.get('/api/students', requireAuth, requireRole('admin'), (req, res) => {
     const query = `
-        SELECT year_of_join, branch, batch, end_serial
-        FROM Student_manage 
+        SELECT 
+            year_of_join, 
+            branch, 
+            batch, 
+            COUNT(*) AS end_serial
+        FROM Student
+        GROUP BY year_of_join, branch, batch
         ORDER BY year_of_join DESC, branch ASC, batch ASC
     `;
 
     db.query(query, (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(results);
-
     });
-
 });
 
-// POST: Add new
-app.post('/api/students/add', (req, res) => {
+// POST: Add new batch and generate student accounts
+app.post('/api/students/add', requireAuth, requireRole('admin'), async (req, res) => {
     const { year, branch, batch, strength } = req.body;
+    const numStrength = parseInt(strength, 10);
 
-    const insertQuery = `
-        INSERT INTO Student_manage 
-        (year_of_join, branch, batch, end_serial) 
-        VALUES (?, ?, ?, ?)
-    `;
+    if (!year || !branch || !batch || isNaN(numStrength) || numStrength <= 0) {
+        return res.status(400).json({ message: "Invalid input values." });
+    }
 
-    db.query(insertQuery, [year, branch, batch, strength], (err) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ message: "Duplicate entry or database error" });
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Insert into Student_manage
+        await connection.query(
+            `INSERT INTO Student_manage (year_of_join, branch, batch, end_serial) 
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE end_serial = VALUES(end_serial)`,
+            [year, branch, batch, numStrength]
+        );
+
+        // 2. Prepare Users and Student rows
+        const defaultPasswordHash = await bcrypt.hash('student123', 10);
+        const userRows = [];
+        const studentRows = [];
+
+        for (let i = 1; i <= numStrength; i++) {
+            const uname = formatStudentUsername(year, branch, batch, i, numStrength);
+            userRows.push([uname, 'student', defaultPasswordHash]);
+            studentRows.push([uname, branch, batch, i, year]);
         }
-        res.status(200).json({ message: 'Saved successfully' });
-    });
 
+        // 3. Bulk insert into Users
+        await connection.query(
+            `INSERT INTO Users (username, role, password) VALUES ?
+             ON DUPLICATE KEY UPDATE role = VALUES(role)`,
+            [userRows]
+        );
+
+        // 4. Bulk insert into Student
+        await connection.query(
+            `INSERT INTO Student (username, branch, batch, roll_no, year_of_join) VALUES ?
+             ON DUPLICATE KEY UPDATE branch = VALUES(branch), batch = VALUES(batch), roll_no = VALUES(roll_no), year_of_join = VALUES(year_of_join)`,
+            [studentRows]
+        );
+
+        await connection.commit();
+        res.status(200).json({ message: `Saved successfully! Generated ${numStrength} student accounts.` });
+    } catch (err) {
+        await connection.rollback();
+        console.error("Error adding students:", err);
+        res.status(500).json({ message: err.message || "Failed to add student records." });
+    } finally {
+        connection.release();
+    }
 });
 
-// PUT: Update
-app.put('/api/students/update', (req, res) => {
+// PUT: Update batch strength and adjust student accounts
+app.put('/api/students/update', requireAuth, requireRole('admin'), async (req, res) => {
+    const { year, branch, batch, strength } = req.body;
+    const numStrength = parseInt(strength, 10);
 
-    const { year, branch, strength } = req.body;
+    if (!year || !branch || !batch || isNaN(numStrength) || numStrength <= 0) {
+        return res.status(400).json({ message: "Invalid input values." });
+    }
 
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
 
-    const query = `
-        UPDATE Student_manage 
-        SET end_serial = ? 
-        WHERE year_of_join = ? AND branch = ?
-    `;
+        // 1. Get current strength
+        const [existing] = await connection.query(
+            `SELECT end_serial FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+            [year, branch, batch]
+        );
+        const oldStrength = existing.length > 0 ? existing[0].end_serial : 0;
 
-    db.query(query, [strength, year, branch], (err) => {
-        if (err) return res.status(500).json(err);
-        res.json({ message: "Updated successfully" });
-    });
+        // 2. Update Student_manage
+        await connection.query(
+            `UPDATE Student_manage SET end_serial = ? WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+            [numStrength, year, branch, batch]
+        );
+
+        // 3. If increased, add new students
+        if (numStrength > oldStrength) {
+            const defaultPasswordHash = await bcrypt.hash('student123', 10);
+            const userRows = [];
+            const studentRows = [];
+
+            for (let i = oldStrength + 1; i <= numStrength; i++) {
+                const uname = formatStudentUsername(year, branch, batch, i, numStrength);
+                userRows.push([uname, 'student', defaultPasswordHash]);
+                studentRows.push([uname, branch, batch, i, year]);
+            }
+
+            if (userRows.length > 0) {
+                await connection.query(
+                    `INSERT INTO Users (username, role, password) VALUES ?
+                     ON DUPLICATE KEY UPDATE role = VALUES(role)`,
+                    [userRows]
+                );
+                await connection.query(
+                    `INSERT INTO Student (username, branch, batch, roll_no, year_of_join) VALUES ?
+                     ON DUPLICATE KEY UPDATE roll_no = VALUES(roll_no)`,
+                    [studentRows]
+                );
+            }
+        } else if (numStrength < oldStrength) {
+            // Remove extra students
+            const userPattern = `${year}_${branch}_${batch}_%`;
+            await connection.query(
+                `DELETE FROM Student WHERE year_of_join = ? AND branch = ? AND batch = ? AND roll_no > ?`,
+                [year, branch, batch, numStrength]
+            );
+            await connection.query(
+                `DELETE FROM Users WHERE username LIKE ? AND username NOT IN (SELECT username FROM Student)`,
+                [userPattern]
+            );
+        }
+
+        await connection.commit();
+        res.json({ message: `Updated successfully to ${numStrength} students!` });
+    } catch (err) {
+        await connection.rollback();
+        console.error("Error updating students:", err);
+        res.status(500).json({ message: err.message || "Failed to update students." });
+    } finally {
+        connection.release();
+    }
 });
 
-// DELETE: Remove
-app.delete('/api/students/:year/:branch/:batch', (req, res) => {
+// DELETE: Remove batch and associated student accounts
+app.delete('/api/students/:year/:branch/:batch', requireAuth, requireRole('admin'), async (req, res) => {
     const { year, branch, batch } = req.params;
 
-    db.query(
-        `DELETE FROM Student_manage 
-         WHERE year_of_join = ? AND branch = ? AND batch = ?`,
-        [year, branch, batch],
-        (err) => {
-            if (err) return res.status(500).json(err);
-            res.json({ message: "Deleted successfully" });
-        }
-    );
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Delete from Student_manage
+        await connection.query(
+            `DELETE FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+            [year, branch, batch]
+        );
+
+        // 2. Delete matching students from Student
+        await connection.query(
+            `DELETE FROM Student WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+            [year, branch, batch]
+        );
+
+        // 3. Delete matching users from Users
+        const userPattern = `${year}_${branch}_${batch}_%`;
+        await connection.query(
+            `DELETE FROM Users WHERE username LIKE ? AND role = 'student'`,
+            [userPattern]
+        );
+
+        await connection.commit();
+        res.json({ message: `Batch ${batch} (${year} ${branch}) and its student accounts deleted successfully!` });
+    } catch (err) {
+        await connection.rollback();
+        console.error("Error deleting students batch:", err);
+        res.status(500).json({ message: err.message || "Failed to delete batch." });
+    } finally {
+        connection.release();
+    }
 });
 
 /* -------------------------------------------------------------------------- */
-/* MANAGE ROOMS ROUTES                            */
+/* MANAGE ROOMS ROUTES                                                        */
 /* -------------------------------------------------------------------------- */
 
-app.get('/api/rooms', (req, res) => {
+app.get('/api/rooms', requireAuth, requireRole('admin'), (req, res) => {
     db.query('SELECT * FROM Rooms ORDER BY block ASC, room_no ASC',
         (err, results) => {
             if (err) return res.status(500).json(err);
@@ -223,9 +483,8 @@ app.get('/api/rooms', (req, res) => {
         });
 });
 
-
 // DELETE: Remove a room
-app.delete('/api/rooms/:block/:room_no', (req, res) => {
+app.delete('/api/rooms/:block/:room_no', requireAuth, requireRole('admin'), (req, res) => {
     const { block, room_no } = req.params;
     const query = 'DELETE FROM Rooms WHERE block = ? AND room_no = ?';
     
@@ -239,7 +498,7 @@ app.delete('/api/rooms/:block/:room_no', (req, res) => {
 });
 
 // GET: Fetch all block names
-app.get('/api/blocks', (req, res) => {
+app.get('/api/blocks', requireAuth, requireRole('admin'), (req, res) => {
     db.query('SELECT block_name FROM blocks ORDER BY block_name ASC', (err, results) => {
         if (err) return res.status(500).json(err);
         res.json(results);
@@ -247,7 +506,7 @@ app.get('/api/blocks', (req, res) => {
 });
 
 // POST: Add a new block
-app.post('/api/blocks', (req, res) => {
+app.post('/api/blocks', requireAuth, requireRole('admin'), (req, res) => {
     const { block_name } = req.body;
     if (!block_name) return res.status(400).json({ message: "Block name is required" });
 
@@ -261,7 +520,7 @@ app.post('/api/blocks', (req, res) => {
 });
 
 // DELETE: Remove a block
-app.delete('/api/blocks/:name', (req, res) => {
+app.delete('/api/blocks/:name', requireAuth, requireRole('admin'), (req, res) => {
     const blockName = req.params.name;
     db.query('DELETE FROM blocks WHERE block_name = ?', [blockName], (err, result) => {
         if (err) return res.status(500).json(err);
@@ -270,7 +529,7 @@ app.delete('/api/blocks/:name', (req, res) => {
 });
 
 // POST: Add or update a room
-app.post('/api/rooms', (req, res) => {
+app.post('/api/rooms', requireAuth, requireRole('admin'), (req, res) => {
     const { room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5 } = req.body;
     const query = `
         INSERT INTO Rooms 
@@ -290,11 +549,12 @@ app.post('/api/rooms', (req, res) => {
         res.json({ message: "Room saved successfully" });
     });
 });
+
 /* -------------------------------------------------------------------------- */
-/* MANAGE TEACHERS ROUTES                           */
+/* MANAGE TEACHERS ROUTES                                                     */
 /* -------------------------------------------------------------------------- */
 
-app.get('/api/teachers', (req, res) => {
+app.get('/api/teachers', requireAuth, requireRole('admin'), (req, res) => {
     db.query(`
         SELECT username, name, availability, department, phone 
         FROM Teacher 
@@ -305,7 +565,7 @@ app.get('/api/teachers', (req, res) => {
     });
 });
 
-app.post('/api/teachers', async (req, res) => {
+app.post('/api/teachers', requireAuth, requireRole('admin'), async (req, res) => {
     const { username, password, name, department, phone } = req.body;
     const availability = "Yes";
 
@@ -344,16 +604,25 @@ app.post('/api/teachers', async (req, res) => {
     }
 });
 
-app.delete('/api/teachers/:username', (req, res) => {
-    db.query("DELETE FROM Users WHERE username = ?",
-        [req.params.username],
-        (err) => {
-            if (err) return res.status(500).json(err);
+// DELETE: Safely delete teacher user without affecting non-teachers
+app.delete('/api/teachers/:username', requireAuth, requireRole('admin'), (req, res) => {
+    const targetUsername = String(req.params.username || "").trim();
+    if (!targetUsername) {
+        return res.status(400).json({ message: "Username is required" });
+    }
+
+    db.query("DELETE FROM Users WHERE username = ? AND LOWER(role) = 'teacher'",
+        [targetUsername],
+        (err, result) => {
+            if (err) return res.status(500).json({ message: err.message });
+            if (result.affectedRows === 0) {
+                return res.status(404).json({ message: "Teacher not found or user is not a teacher" });
+            }
             res.json({ message: "Teacher deleted successfully" });
         });
 });
 
-app.put('/api/teachers/availability', (req, res) => {
+app.put('/api/teachers/availability', requireAuth, requireRole('admin'), (req, res) => {
     const { username, availability } = req.body;
 
     db.query(
@@ -367,14 +636,10 @@ app.put('/api/teachers/availability', (req, res) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* EXAM SCHEDULE ROUTES                             */
+/* TEACHER EXCEL UPLOAD ROUTES                                                */
 /* -------------------------------------------------------------------------- */
 
-// GET ALL: Updated to select all columns including sub_code
-/*                         TEACHER EXCEL UPLOAD ROUTE                         */
-/* -------------------------------------------------------------------------- */
-
-app.get("/api/teachers/template", (req, res) => {
+app.get("/api/teachers/template", requireAuth, requireRole('admin'), (req, res) => {
     const templatePath = path.join(__dirname, "teacher_template1.xlsx");
 
     if (!fs.existsSync(templatePath)) {
@@ -384,287 +649,262 @@ app.get("/api/teachers/template", (req, res) => {
     return res.download(templatePath, "teacher_template1.xlsx");
 });
 
-app.post("/api/teachers/upload-excel", upload.single("file"), async (req, res) => {
-
-    console.log("Excel upload request received");
-
-    try {
+app.post("/api/teachers/upload-excel", requireAuth, requireRole('admin'), (req, res) => {
+    upload.single("file")(req, res, async (uploadErr) => {
+        if (uploadErr) {
+            return res.status(400).json({ message: uploadErr.message || "File upload failed" });
+        }
 
         if (!req.file) {
-            console.log("No file uploaded");
             return res.status(400).json({ message: "No file uploaded" });
         }
 
-        console.log("Uploaded file:", req.file.filename);
+        try {
+            const workbook = XLSX.readFile(req.file.path);
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(sheet, {
+                header: 1,
+                defval: "",
+                blankrows: false
+            });
 
-        const workbook = XLSX.readFile(req.file.path);
-
-        const sheetName = workbook.SheetNames[0];
-
-        const sheet = workbook.Sheets[sheetName];
-
-        const rows = XLSX.utils.sheet_to_json(sheet, {
-            header: 1,
-            defval: "",
-            blankrows: false
-        });
-
-        if (!rows.length) {
-            return res.status(400).json({ message: "Excel file is empty" });
-        }
-
-        let processedCount = 0;
-        const role = "Teacher";
-        const availability = "Yes";
-        const hashedDefaultPassword = await bcrypt.hash("pass123", 10);
-
-        const hasHeader = rows.length > 0 && (
-            String(rows[0][0] || "").trim().toLowerCase() === "user_name" ||
-            String(rows[0][0] || "").trim().toLowerCase() === "username"
-        );
-        const dataRows = hasHeader ? rows.slice(1) : rows;
-
-        for (const row of dataRows) {
-            const username = String(row[0] || "").trim();
-            const name = String(row[1] || "").trim();
-            const department = String(row[2] || "").trim();
-            const phone = String(row[3] || "").trim();
-
-            if (!username || !name || !department || !phone) {
-                continue;
+            if (!rows.length) {
+                return res.status(400).json({ message: "Excel file is empty" });
             }
 
-            await db.promise().query(
-                `INSERT INTO Users (username, role, password)
-                 VALUES (?, ?, ?)
-                 ON DUPLICATE KEY UPDATE
-                 role=VALUES(role),
-                 password=VALUES(password)`,
-                [username, role, hashedDefaultPassword]
+            let processedCount = 0;
+            const role = "Teacher";
+            const availability = "Yes";
+            const hashedDefaultPassword = await bcrypt.hash("pass123", 10);
+
+            const hasHeader = rows.length > 0 && (
+                String(rows[0][0] || "").trim().toLowerCase() === "user_name" ||
+                String(rows[0][0] || "").trim().toLowerCase() === "username"
             );
+            const dataRows = hasHeader ? rows.slice(1) : rows;
 
-            await db.promise().query(
-                `INSERT INTO Teacher (username, name, availability, department, phone)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE
-                 name=VALUES(name),
-                 department=VALUES(department),
-                 phone=VALUES(phone),
-                 availability=VALUES(availability)`,
-                [username, name, availability, department, phone]
-            );
+            for (const row of dataRows) {
+                const username = String(row[0] || "").trim();
+                const name = String(row[1] || "").trim();
+                const department = String(row[2] || "").trim();
+                const phone = String(row[3] || "").trim();
 
-            processedCount += 1;
-        }
+                if (!username || !name || !department || !phone) {
+                    continue;
+                }
 
-        fs.unlink(req.file.path, () => {});
-        if (processedCount === 0) {
-            return res.status(400).json({
-                message: "No valid rows found in Excel",
-                hint: "Required Excel order: username, name, department, phone"
+                await db.promise().query(
+                    `INSERT INTO Users (username, role, password)
+                     VALUES (?, ?, ?)
+                     ON DUPLICATE KEY UPDATE
+                     role=VALUES(role),
+                     password=VALUES(password)`,
+                    [username, role, hashedDefaultPassword]
+                );
+
+                await db.promise().query(
+                    `INSERT INTO Teacher (username, name, availability, department, phone)
+                     VALUES (?, ?, ?, ?, ?)
+                     ON DUPLICATE KEY UPDATE
+                     name=VALUES(name),
+                     department=VALUES(department),
+                     phone=VALUES(phone),
+                     availability=VALUES(availability)`,
+                    [username, name, availability, department, phone]
+                );
+
+                processedCount += 1;
+            }
+
+            if (processedCount === 0) {
+                return res.status(400).json({
+                    message: "No valid rows found in Excel",
+                    hint: "Required Excel order: username, name, department, phone"
+                });
+            }
+            res.json({ message: `Teachers uploaded successfully (${processedCount} rows)` });
+        } catch (error) {
+            console.error("Excel upload processing error:", error);
+            res.status(500).json({
+                message: "Excel upload failed",
+                error: error?.message || "Unknown server error"
             });
+        } finally {
+            if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+                fs.unlink(req.file.path, () => {});
+            }
         }
-        res.json({ message: `Teachers uploaded successfully (${processedCount} rows)` });
-
-    } catch (error) {
-
-        console.error(error);
-        res.status(500).json({
-            message: "Excel upload failed",
-            error: error?.message || "Unknown server error"
-        });
-
-    }
-
+    });
 });
-/* -------------------------------------------------------------------------- */
-/*                          EXAM SCHEDULE ROUTES                              */
-/* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+/* EXAM SCHEDULE ROUTES                                                       */
+/* -------------------------------------------------------------------------- */
 
 // GET ALL EXAMS
-app.get('/api/exam-schedule', (req, res) => {
-
-    const query = `
-        SELECT * FROM exam_schedule
-        ORDER BY exam_date DESC, year ASC
+app.get('/api/exam-schedule', requireAuth, requireRole('admin'), (req, res) => {
+    const buildQuery = (tableName) => `
         SELECT *
-        FROM Exam_schedule
+        FROM ${tableName}
         ORDER BY exam_date ASC, session ASC, branch ASC
     `;
 
-    db.query(query, (err, results) => {
+    db.query(buildQuery('Exam_schedule'), (err, results) => {
+        if (!err) return res.json(results);
+        if (err.code !== 'ER_NO_SUCH_TABLE') return res.status(500).json(err);
 
-        if (err)
-            return res.status(500).json(err);
-
-        res.json(results);
-
+        db.query(buildQuery('exam_schedule'), (fallbackErr, fallbackResults) => {
+            if (fallbackErr) return res.status(500).json(fallbackErr);
+            return res.json(fallbackResults);
+        });
     });
-
 });
-
-// ADD: Updated to handle nested object structure {name, code} and batch insert
-
 
 // ADD EXAM
-app.post('/api/exam-schedule/add', (req, res) => {
+app.post('/api/exam-schedule/add', requireAuth, requireRole('admin'), async (req, res) => {
+    const yearVal = req.body.year ?? req.body.academicYear;
+    const dateVal = req.body.date ?? req.body.examDate;
+    const session = req.body.session;
+    const examNumber = req.body.examNumber ?? req.body.exam_number ?? 1;
 
-    // Filter branches where at least a name is entered, then map to SQL array
-    const values = Object.entries(subjects)
-        .filter(([_, sub]) => sub.name && sub.name.trim() !== "")
-        .map(([branch, sub]) =>
-            [year, examNumber, date, session, branch, sub.name, sub.code]
+    const formattedDate = safeFormatDate(dateVal);
+    if (!formattedDate) {
+        return res.status(400).json({ message: "Invalid exam date provided" });
+    }
+
+    let values = [];
+    if (req.body.subjects && typeof req.body.subjects === 'object' && !Array.isArray(req.body.subjects)) {
+        values = Object.entries(req.body.subjects)
+            .filter(([_, sub]) => sub?.name && String(sub.name).trim() !== "")
+            .map(([branch, sub]) => [
+                Number(yearVal),
+                Number(examNumber) || 1,
+                formattedDate,
+                session,
+                branch,
+                String(sub.name || '').trim(),
+                String(sub.code || '').trim()
+            ]);
+    } else if (Array.isArray(req.body.branches)) {
+        values = req.body.branches
+            .filter(b => (b.subjectName || b.subject) && String(b.subjectName || b.subject).trim() !== "")
+            .map(b => [
+                Number(yearVal),
+                Number(examNumber) || 1,
+                formattedDate,
+                session,
+                b.branch,
+                String(b.subjectName || b.subject || '').trim(),
+                String(b.subjectCode || b.sub_code || '').trim()
+            ]);
+    }
+
+    if (!values.length) {
+        return res.status(400).json({ message: "At least one subject is required" });
+    }
+
+    try {
+        await db.promise().query(
+            `INSERT INTO Exam_schedule
+            (year, exam_number, exam_date, session, branch, subject, sub_code)
+            VALUES ?`,
+            [values]
         );
-    const {
-        year,
-        exam_date,
-        session,
-        branch,
-        subject,
-        sub_code
-    } = req.body;
-
-
-    const query = `
-        INSERT INTO Exam_schedule
-        (year, exam_date, session, branch, subject, sub_code)
-        VALUES (?, ?, ?, ?, ?, ?)
-    `;
-
-
-    db.query(query,
-
-        [
-            year,
-            exam_date,
-            session,
-            branch,
-            subject,
-            sub_code
-        ],
-
-        (err) => {
-
-            if (err) {
-
-                console.log(err);
-
-                return res.status(500).json({
-                    message: "Error saving exam schedule"
-                });
-
-            }
-
-            res.json({
-                message: "Exam schedule added successfully"
-            });
-
-        });
-
+        res.json({ message: "Exam schedule added successfully" });
+    } catch (err) {
+        console.error("Exam schedule add error:", err);
+        res.status(500).json({ message: err.message || "Error saving exam schedule" });
+    }
 });
-
-
 
 // UPDATE EXAM
-app.put('/api/exam-schedule/update/:id', (req, res) => {
+app.put('/api/exam-schedule/update/:id', requireAuth, requireRole('admin'), async (req, res) => {
+    const yearVal = req.body.year ?? req.body.academicYear;
+    const dateVal = req.body.date ?? req.body.examDate;
+    const session = req.body.session;
+    const examNumber = req.body.examNumber ?? req.body.exam_number ?? 1;
 
-    const {
-        year,
-        exam_date,
+    const formattedDate = safeFormatDate(dateVal);
+    if (!formattedDate) {
+        return res.status(400).json({ message: "Invalid exam date provided" });
+    }
+
+    let branch = "";
+    let subName = "";
+    let subCode = "";
+
+    if (req.body.subjects && typeof req.body.subjects === 'object' && !Array.isArray(req.body.subjects)) {
+        const subjectEntry = Object.entries(req.body.subjects)
+            .find(([_, sub]) => sub?.name && String(sub.name).trim() !== "");
+        if (subjectEntry) {
+            branch = subjectEntry[0];
+            subName = subjectEntry[1].name;
+            subCode = subjectEntry[1].code;
+        }
+    } else if (Array.isArray(req.body.branches) && req.body.branches.length > 0) {
+        const b = req.body.branches[0];
+        branch = b.branch;
+        subName = b.subjectName || b.subject;
+        subCode = b.subjectCode || b.sub_code;
+    }
+
+    if (!subName || String(subName).trim() === "") {
+        return res.status(400).json({ message: "At least one subject is required" });
+    }
+
+    const updateValues = [
+        Number(yearVal),
+        Number(examNumber) || 1,
+        formattedDate,
         session,
         branch,
-        subject,
-        sub_code
-    } = req.body;
+        String(subName || '').trim(),
+        String(subCode || '').trim(),
+        req.params.id
+    ];
 
-
-    const query = `
-        UPDATE Exam_schedule
-        SET
-        year=?,
-        exam_date=?,
-        session=?,
-        branch=?,
-        subject=?,
-        sub_code=?
-        WHERE exam_id=?
-    `;
-
-
-    db.query(query,
-        [year, examNumber, date, session, branch, subjectData.name, subjectData.code, req.params.id],
-        (err) => {
-            if (err) {
-                console.error("SQL UPDATE Error:", err.message);
-                return res.status(500).json(err);
-            }
-            res.json({ message: "Updated successfully" });
-        }
-    );
-
-        [
-            year,
-            exam_date,
-            session,
-            branch,
-            subject,
-            sub_code,
-            req.params.id
-        ],
-
-        (err) => {
-
-            if (err)
-                return res.status(500).json(err);
-
-            res.json({
-                message: "Exam schedule updated successfully"
-            });
-
-        };
-
+    try {
+        await db.promise().query(
+            `UPDATE Exam_schedule
+            SET year = ?, exam_number = ?, exam_date = ?, session = ?, branch = ?, subject = ?, sub_code = ?
+            WHERE exam_id = ?`,
+            updateValues
+        );
+        res.json({ message: "Exam schedule updated successfully" });
+    } catch (err) {
+        console.error("Exam schedule update error:", err);
+        res.status(500).json({ message: err.message || "Error saving exam schedule" });
+    }
 });
-
-
 
 // DELETE EXAM
-app.delete('/api/exam-schedule/:id', (req, res) => {
-    db.query(
-        'DELETE FROM exam_schedule WHERE exam_id = ?',
-        [req.params.id],
-        (err) => {
-            if (err) return res.status(500).json(err);
-            res.json({ message: "Deleted successfully" });
-        }
-    );
-
-
-    const query =
-        `DELETE FROM Exam_schedule WHERE exam_id=?`;
-
-
-    db.query(query,
-
-        [req.params.id],
-
-        (err) => {
-
-            if (err)
-                return res.status(500).json(err);
-
-            res.json({
-                message: "Exam deleted successfully"
+app.delete('/api/exam-schedule/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const runDelete = (tableName) => {
+        const query = `DELETE FROM ${tableName} WHERE exam_id = ?`;
+        return new Promise((resolve, reject) => {
+            db.query(query, [req.params.id], (err, result) => {
+                if (err) return reject(err);
+                resolve(result);
             });
-
         });
+    };
 
+    runDelete('Exam_schedule')
+        .then(() => res.json({ message: "Exam deleted successfully" }))
+        .catch((err) => {
+            if (err.code !== 'ER_NO_SUCH_TABLE') return res.status(500).json(err);
+            runDelete('exam_schedule')
+                .then(() => res.json({ message: "Exam deleted successfully" }))
+                .catch((fallbackErr) => res.status(500).json(fallbackErr));
+        });
 });
+
 /* -------------------------------------------------------------------------- */
-/* LOGIN ROUTES                                */
+/* LOGIN ROUTES                                                               */
 /* -------------------------------------------------------------------------- */
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", authRateLimiter, (req, res) => {
 
     const usernameInput = String(req.body.username || "");
     const passwordInput = String(req.body.password || "");
@@ -673,20 +913,38 @@ app.post("/api/login", (req, res) => {
     const username = usernameInput.trim();
     const role = roleInput.trim();
 
+    if (!username || !passwordInput || !role) {
+        return res.status(400).json({ message: "Username, password, and role are required." });
+    }
+
+    // Prepare candidate usernames (supports both unpadded and zero-padded login for students)
+    let candidateUsernames = [username.toLowerCase()];
+    const matchStudentPattern = username.match(/^(\d{4}_[A-Za-z]+_[A-Za-z0-9]+_)(\d+)$/);
+    if (matchStudentPattern) {
+        const prefix = matchStudentPattern[1].toLowerCase();
+        const num = parseInt(matchStudentPattern[2], 10);
+        candidateUsernames.push(`${prefix}${String(num).padStart(2, '0')}`);
+        candidateUsernames.push(`${prefix}${String(num).padStart(3, '0')}`);
+        candidateUsernames.push(`${prefix}${num}`);
+    }
+    candidateUsernames = [...new Set(candidateUsernames)];
+
     const query = `
         SELECT * FROM Users
-        WHERE LOWER(TRIM(username)) = LOWER(?)
+        WHERE LOWER(TRIM(username)) IN (?)
           AND LOWER(TRIM(role)) = LOWER(?)
         LIMIT 1
     `;
 
-    db.query(query, [username, role], async (err, results) => {
+    db.query(query, [candidateUsernames, role], async (err, results) => {
 
-        if (err)
-            return res.status(500).json({ message: "Server error" });
+        if (err) {
+            console.error("Login database error:", err);
+            return res.status(500).json({ message: "Server error during authentication" });
+        }
 
         if (results.length === 0)
-            return res.status(401).json({ message: "User not found" });
+            return res.status(401).json({ message: "Invalid login credentials" });
 
         const user = results[0];
 
@@ -713,17 +971,18 @@ app.post("/api/login", (req, res) => {
         }
 
         if (!match)
-            return res.status(401).json({ message: "Incorrect password" });
+            return res.status(401).json({ message: "Invalid login credentials" });
 
         const token = jwt.sign(
             { username: user.username, role: user.role },
             SECRET_KEY,
-            { expiresIn: "2h" }
+            { expiresIn: "4h" }
         );
 
         res.json({
             success: true,
             role: user.role,
+            username: user.username,
             token: token
         });
 
@@ -731,11 +990,8 @@ app.post("/api/login", (req, res) => {
 
 });
 
-app.post("/api/teacher/change-password", async (req, res) => {
-    const user = verifyRequestToken(req, res, "teacher");
-    if (!user) {
-        return;
-    }
+app.post("/api/teacher/change-password", requireAuth, requireRole('teacher'), async (req, res) => {
+    const user = req.user;
 
     const currentPassword = String(req.body.currentPassword || "");
     const newPassword = String(req.body.newPassword || "");
@@ -743,6 +999,10 @@ app.post("/api/teacher/change-password", async (req, res) => {
 
     if (!currentPassword || !newPassword || !confirmPassword) {
         return res.status(400).json({ message: "All password fields are required" });
+    }
+
+    if (newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters long" });
     }
 
     if (newPassword !== confirmPassword) {
@@ -796,41 +1056,76 @@ app.post("/api/teacher/change-password", async (req, res) => {
     }
 });
 
-app.post("/api/signup", async (req, res) => {
+// SIGNUP: Public registration restricted to Student and Teacher roles
+app.post("/api/signup", authRateLimiter, async (req, res) => {
+    const rawUsername = String(req.body.username || "").trim();
+    const rawPassword = String(req.body.password || "");
+    const rawRole = String(req.body.role || "").trim();
 
-    const { username, password, role } = req.body;
-
-    try {
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const query = `
-        INSERT INTO Users (username, role, password)
-        VALUES (?, ?, ?)
-        `;
-
-        db.query(query, [username, role, hashedPassword], (err) => {
-
-            if (err)
-                return res.status(500).json({
-                    message: "Username already exists"
-                });
-
-            res.json({
-                message: "User created successfully"
-            });
-
-        });
-
-    } catch (error) {
-
-        res.status(500).json({
-            message: "Server error"
-        });
-
+    if (!rawUsername || !rawPassword || !rawRole) {
+        return res.status(400).json({ message: "Username, password, and role are required." });
     }
 
+    if (rawUsername.length < 3 || rawUsername.length > 50) {
+        return res.status(400).json({ message: "Username must be between 3 and 50 characters." });
+    }
+
+    if (rawPassword.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters long." });
+    }
+
+    const normalizedRole = rawRole.toLowerCase();
+    if (!["student", "teacher"].includes(normalizedRole)) {
+        return res.status(400).json({ message: "Invalid role. Only Student and Teacher signups are permitted." });
+    }
+
+    const canonicalRole = normalizedRole === "student" ? "student" : "Teacher";
+
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const [existing] = await connection.query(
+            "SELECT username FROM Users WHERE LOWER(username) = LOWER(?) LIMIT 1",
+            [rawUsername]
+        );
+
+        if (existing.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ message: "Username already exists. Please choose a different one." });
+        }
+
+        const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+        await connection.query(
+            "INSERT INTO Users (username, role, password) VALUES (?, ?, ?)",
+            [rawUsername, canonicalRole, hashedPassword]
+        );
+
+        if (normalizedRole === "teacher") {
+            await connection.query(
+                "INSERT INTO Teacher (username, name, availability, department, phone) VALUES (?, ?, 'Yes', 'General', '') ON DUPLICATE KEY UPDATE availability='Yes'",
+                [rawUsername, rawUsername]
+            );
+        } else if (normalizedRole === "student") {
+            const currentYear = new Date().getFullYear();
+            await connection.query(
+                "INSERT INTO Student (username, branch, batch, roll_no, year_of_join) VALUES (?, 'General', 'A', 0, ?) ON DUPLICATE KEY UPDATE year_of_join=VALUES(year_of_join)",
+                [rawUsername, currentYear]
+            );
+        }
+
+        await connection.commit();
+        res.status(201).json({ message: "User account created successfully! You can now log in." });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Signup error:", error);
+        res.status(500).json({ message: "Server error creating user account." });
+    } finally {
+        connection.release();
+    }
 });
+
 
 
 
@@ -839,16 +1134,17 @@ app.post("/api/signup", async (req, res) => {
 // ----------------------------------------------------------------------------
 
 // GET: Fetch required data for the Allocation page
-app.get('/api/allocation/init', async (req, res) => {
+app.get('/api/allocation/init', requireAuth, requireRole('admin'), async (req, res) => {
     try {
         // Fetch rooms for the toggle list
         const [rooms] = await db.promise().query('SELECT block, room_no, capacity FROM Rooms ORDER BY block, room_no');
         
         // Fetch student counts grouped by join year
-        const currentYear = new Date().getFullYear();
+        const [[maxRow]] = await db.promise().query('SELECT MAX(year_of_join) AS maxYear FROM Student');
+        const baseYear = (maxRow && maxRow.maxYear) ? Number(maxRow.maxYear) : new Date().getFullYear();
         const [students] = await db.promise().query(`
             SELECT 
-                (${currentYear} - year_of_join + 1) AS academic_year,
+                (${baseYear} - year_of_join + 1) AS academic_year,
                 SUM(end_serial) as total_students
             FROM Student_manage 
             GROUP BY year_of_join
@@ -859,7 +1155,27 @@ app.get('/api/allocation/init', async (req, res) => {
             total_students: Number(s.total_students)
         }));
 
-        res.json({ rooms, students: formattedStudents });
+        // Fetch distinct scheduled exam dates and sessions
+        const [examSlots] = await db.promise().query(`
+            SELECT DISTINCT exam_date, session 
+            FROM Exam_schedule 
+            ORDER BY exam_date ASC, 
+                     CASE session WHEN 'FN' THEN 1 WHEN 'AN' THEN 2 ELSE 3 END ASC
+        `);
+
+        const formattedSlots = examSlots.map(s => ({
+            exam_date: safeFormatDate(s.exam_date),
+            session: s.session
+        })).filter(s => Boolean(s.exam_date));
+
+        const scheduledDates = [...new Set(formattedSlots.map(s => s.exam_date))];
+
+        res.json({ 
+            rooms, 
+            students: formattedStudents,
+            scheduledSlots: formattedSlots,
+            scheduledDates
+        });
     } catch (err) {
         console.error("Allocation Init Error:", err);
         res.status(500).json({ error: "Database fetch failed" });
@@ -868,33 +1184,44 @@ app.get('/api/allocation/init', async (req, res) => {
 
 
 // POST: Generate Allocation
-app.post('/api/allocation/generate', async (req, res) => {
+app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (req, res) => {
     const { examDate, session, selectedYears, selectedRooms } = req.body;
+    const formattedDate = safeFormatDate(examDate);
 
-    if (!examDate || !session || !selectedYears?.length || !selectedRooms?.length) {
+    if (!formattedDate || !session || !selectedYears?.length || !selectedRooms?.length) {
         return res.status(400).json({ message: "Missing required fields." });
     }
 
     const connection = await db.promise().getConnection();
 
-    await connection.query("DELETE FROM Seating_allocation");
-
     try {
         await connection.beginTransaction();
 
-        // 1️⃣ Fetch Exam
+        // 1️⃣ Fetch Exam(s) for this specific slot
         const [examRows] = await connection.query(
-            `SELECT exam_id FROM Exam_schedule
+            `SELECT * FROM Exam_schedule
              WHERE exam_date = ? AND session = ?`,
-            [examDate, session]
+            [formattedDate, session]
         );
 
         if (!examRows.length) {
             await connection.rollback();
-            return res.status(400).json({ message: "No exam found." });
+            return res.status(400).json({ message: "No scheduled exams found for this date and session." });
         }
 
         const exam_id = examRows[0].exam_id;
+        const examIds = examRows.map(e => e.exam_id);
+
+        const examMap = {};
+        examRows.forEach(row => {
+            examMap[`${row.year}_${row.branch}`] = row.exam_id;
+        });
+
+        // Delete existing seating for THIS slot's exams only (leaves all other dates & slots intact)
+        await connection.query(
+            `DELETE FROM Seating_allocation WHERE exam_id IN (?)`,
+            [examIds]
+        );
 
         // 2️⃣ Fetch Selected Rooms (sorted)
         const [rooms] = await connection.query(
@@ -910,50 +1237,67 @@ app.post('/api/allocation/generate', async (req, res) => {
         }
 
         // 3️⃣ Convert academic year → join year
-        const currentYear = new Date().getFullYear();
+        const [[maxRow]] = await connection.query('SELECT MAX(year_of_join) AS maxYear FROM Student');
+        const baseYear = (maxRow && maxRow.maxYear) ? Number(maxRow.maxYear) : new Date().getFullYear();
         const joinYears = selectedYears.map(y =>
-            currentYear - Number(y) + 1
+            baseYear - Number(y) + 1
         );
 
-        // 4️⃣ Fetch Students
+        // 4️⃣ Fetch Students (from Student table first to ensure accurate usernames, fallback to Student_manage)
         const [studentRows] = await connection.query(
-            `SELECT year_of_join, branch, batch, end_serial
-             FROM Student_manage
+            `SELECT username, branch, batch, roll_no, year_of_join
+             FROM Student
              WHERE year_of_join IN (?)
-             ORDER BY year_of_join ASC, branch ASC, batch ASC`,
+             ORDER BY year_of_join ASC, branch ASC, batch ASC, roll_no ASC`,
             [joinYears]
         );
 
-        if (!studentRows.length) {
-            await connection.rollback();
-            return res.status(400).json({ message: "No students found." });
-        }
-
         // 5️⃣ Build Year Queues
         const yearQueues = {};
-        studentRows.forEach(row => {
-            if (!yearQueues[row.year_of_join])
-                yearQueues[row.year_of_join] = [];
+        if (studentRows.length > 0) {
+            studentRows.forEach(row => {
+                if (!yearQueues[row.year_of_join])
+                    yearQueues[row.year_of_join] = [];
 
-            for (let i = 1; i <= row.end_serial; i++) {
                 yearQueues[row.year_of_join].push({
-                    username: `${row.year_of_join}_${row.branch}_${row.batch}_${i}`,
+                    username: row.username,
                     branch: row.branch,
                     batch: row.batch,
-                    roll_no: i,
+                    roll_no: row.roll_no,
                     year: row.year_of_join
                 });
+            });
+        } else {
+            const [manageRows] = await connection.query(
+                `SELECT year_of_join, branch, batch, end_serial
+                 FROM Student_manage
+                 WHERE year_of_join IN (?)
+                 ORDER BY year_of_join ASC, branch ASC, batch ASC`,
+                [joinYears]
+            );
+
+            if (!manageRows.length) {
+                await connection.rollback();
+                return res.status(400).json({ message: "No students found." });
             }
-        });
+
+            manageRows.forEach(row => {
+                if (!yearQueues[row.year_of_join])
+                    yearQueues[row.year_of_join] = [];
+
+                for (let i = 1; i <= row.end_serial; i++) {
+                    yearQueues[row.year_of_join].push({
+                        username: formatStudentUsername(row.year_of_join, row.branch, row.batch, i, row.end_serial),
+                        branch: row.branch,
+                        batch: row.batch,
+                        roll_no: i,
+                        year: row.year_of_join
+                    });
+                }
+            });
+        }
 
         const yearList = Object.keys(yearQueues).sort();
-
-        await connection.query(
-            `DELETE FROM Seating_allocation WHERE exam_id = ?`,
-            [exam_id]
-        );
-
-        let seating_id = 1;
         let globalYearPointer = 0;
 
         // =========================
@@ -993,16 +1337,17 @@ app.post('/api/allocation/generate', async (req, res) => {
                     if (yearQueues[assignedYear]?.length) {
 
                         const student = yearQueues[assignedYear].shift();
+                        const studentAcadYear = baseYear - student.year + 1;
+                        const targetExamId = examMap[`${studentAcadYear}_${student.branch}`] || exam_id;
 
                         await connection.query(
                             `INSERT INTO Seating_allocation
-                            (seating_id, exam_id, room_no, block,
+                            (exam_id, room_no, block,
                              column_no, bench_no, seat_position,
                              username, batch, roll_no, branch, session)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                             [
-                                seating_id++,
-                                exam_id,
+                                targetExamId,
                                 room.room_no,
                                 room.block,
                                 colIndex + 1,
@@ -1039,16 +1384,17 @@ app.post('/api/allocation/generate', async (req, res) => {
                         if (rightYear && yearQueues[rightYear]?.length) {
 
                             const student = yearQueues[rightYear].shift();
+                            const studentAcadYear = baseYear - student.year + 1;
+                            const targetExamId = examMap[`${studentAcadYear}_${student.branch}`] || exam_id;
 
                             await connection.query(
                                 `INSERT INTO Seating_allocation
-                                (seating_id, exam_id, room_no, block,
+                                (exam_id, room_no, block,
                                  column_no, bench_no, seat_position,
                                  username, batch, roll_no, branch, session)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                                 [
-                                    seating_id++,
-                                    exam_id,
+                                    targetExamId,
                                     room.room_no,
                                     room.block,
                                     colIndex + 1,
@@ -1067,8 +1413,18 @@ app.post('/api/allocation/generate', async (req, res) => {
             }
         }
 
-        const hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, examDate);
-        const totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, examDate);
+        // Upsert into Allocation_History for this slot
+        await connection.query(
+            `INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE 
+                 selected_years = VALUES(selected_years), 
+                 selected_rooms = VALUES(selected_rooms)`,
+            [formattedDate, session, JSON.stringify(selectedYears), JSON.stringify(selectedRooms)]
+        );
+
+        const hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate);
+        const totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate);
 
         const nextHallWiseReportNumber = await getNextHallWiseReportNumber(connection);
         const hallWiseReportName = `hall-wise-report${nextHallWiseReportNumber}`;
@@ -1090,13 +1446,13 @@ app.post('/api/allocation/generate', async (req, res) => {
         await connection.query(
             `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
              VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId, "Hall-wise", examDate, hallWiseReportName, hallWiseFilePath]
+            [reportIdRow.nextReportId, "Hall-wise", formattedDate, hallWiseReportName, hallWiseFilePath]
         );
 
         await connection.query(
             `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
              VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId + 1, "Total Seating", examDate, totalSeatingReportName, totalSeatingFilePath]
+            [reportIdRow.nextReportId + 1, "Total Seating", formattedDate, totalSeatingReportName, totalSeatingFilePath]
         );
 
         await connection.commit();
@@ -1109,7 +1465,7 @@ app.post('/api/allocation/generate', async (req, res) => {
 
     } catch (error) {
         await connection.rollback();
-        console.error(error);
+        console.error("Allocation generation error:", error);
         res.status(500).json({
             message: "Allocation failed: " + error.message
         });
@@ -1122,42 +1478,118 @@ app.post('/api/allocation/generate', async (req, res) => {
 //                         SAVE & FETCH SELECTION ROUTES
 // ----------------------------------------------------------------------------
 
-app.post('/api/allocation/save', (req, res) => {
+app.post('/api/allocation/save', requireAuth, requireRole('admin'), (req, res) => {
     const { examDate, session, selectedYears, selectedRooms } = req.body;
-    const yearsStr = JSON.stringify(selectedYears);
-    const roomsStr = JSON.stringify(selectedRooms);
+    const formattedDate = safeFormatDate(examDate);
+    if (!formattedDate || !session) {
+        return res.status(400).json({ error: "Valid date and session required" });
+    }
+    const yearsStr = JSON.stringify(selectedYears || []);
+    const roomsStr = JSON.stringify(selectedRooms || []);
 
     const query = `
-        INSERT INTO Allocation_History (id, exam_date, session, selected_years, selected_rooms)
-        VALUES (1, ?, ?, ?, ?)
+        INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms)
+        VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE 
-            exam_date = VALUES(exam_date), 
-            session = VALUES(session), 
             selected_years = VALUES(selected_years), 
             selected_rooms = VALUES(selected_rooms)
     `;
 
-    db.query(query, [examDate, session, yearsStr, roomsStr], (err, result) => {
+    db.query(query, [formattedDate, session, yearsStr, roomsStr], (err, result) => {
         if (err) return res.status(500).json({ error: "Failed to save selection" });
         res.json({ message: "Selection saved successfully" });
     });
 });
 
-app.get('/api/allocation/saved-state', (req, res) => {
-    db.query('SELECT * FROM Allocation_History WHERE id = 1', (err, results) => {
-        if (err) return res.status(500).json(err);
+app.get('/api/allocation/saved-state', requireAuth, requireRole('admin'), async (req, res) => {
+    const { examDate, session } = req.query;
+    let query = 'SELECT * FROM Allocation_History ORDER BY updated_at DESC LIMIT 1';
+    let params = [];
+
+    const formattedDate = examDate ? safeFormatDate(examDate) : null;
+    if (formattedDate && session) {
+        query = 'SELECT * FROM Allocation_History WHERE DATE(exam_date) = ? AND session = ? ORDER BY updated_at DESC LIMIT 1';
+        params = [formattedDate, session];
+    }
+
+    try {
+        const [results] = await db.promise().query(query, params);
+        let isGenerated = false;
+
+        if (formattedDate && session) {
+            const [[allocCheck]] = await db.promise().query(
+                `SELECT COUNT(*) AS count
+                 FROM Seating_allocation sa
+                 JOIN Exam_schedule es ON es.exam_id = sa.exam_id
+                 WHERE DATE(es.exam_date) = ? AND (es.session = ? OR sa.session = ?)`,
+                [formattedDate, session, session]
+            );
+            isGenerated = Number(allocCheck?.count || 0) > 0;
+        }
+
         if (results.length > 0) {
             const data = results[0];
             res.json({
-                examDate: data.exam_date,
+                examDate: safeFormatDate(data.exam_date),
                 session: data.session,
-                selectedYears: JSON.parse(data.selected_years),
-                selectedRooms: JSON.parse(data.selected_rooms)
+                selectedYears: JSON.parse(data.selected_years || '[]'),
+                selectedRooms: JSON.parse(data.selected_rooms || '[]'),
+                isGenerated
             });
         } else {
-            res.json(null);
+            res.json({
+                examDate: formattedDate,
+                session: session,
+                selectedYears: [],
+                selectedRooms: [],
+                isGenerated
+            });
         }
-    });
+    } catch (err) {
+        console.error("Failed to fetch saved allocation state:", err);
+        res.status(500).json({ message: "Failed to fetch allocation state." });
+    }
+});
+
+// DELETE: Remove seating allocation for a specific slot
+app.delete('/api/allocation/delete', requireAuth, requireRole('admin'), async (req, res) => {
+    const { date, session } = req.body;
+    const formattedDate = safeFormatDate(date);
+    if (!formattedDate || !session) {
+        return res.status(400).json({ message: "Valid date and session are required." });
+    }
+
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const [examRows] = await connection.query(
+            `SELECT exam_id FROM Exam_schedule WHERE exam_date = ? AND session = ?`,
+            [formattedDate, session]
+        );
+
+        if (examRows.length > 0) {
+            const examIds = examRows.map(e => e.exam_id);
+            await connection.query(
+                `DELETE FROM Seating_allocation WHERE exam_id IN (?)`,
+                [examIds]
+            );
+        }
+
+        await connection.query(
+            `DELETE FROM Allocation_History WHERE exam_date = ? AND session = ?`,
+            [formattedDate, session]
+        );
+
+        await connection.commit();
+        res.json({ message: "Seating allocation deleted successfully." });
+    } catch (err) {
+        await connection.rollback();
+        console.error("Failed to delete seating allocation:", err);
+        res.status(500).json({ message: "Failed to delete seating allocation." });
+    } finally {
+        connection.release();
+    }
 });
 
 // ----------------------------------------------------------------------------
@@ -1628,6 +2060,7 @@ async function renderPdfFromHtml(html) {
 
     try {
         const page = await browser.newPage();
+        await page.setJavaScriptEnabled(false);
         await page.setContent(html, { waitUntil: "networkidle0" });
 
         return await page.pdf({
@@ -2055,7 +2488,7 @@ async function getNextInvigilationDutyReportNumber(connection) {
     return maxNumber + 1;
 }
 
-app.get("/api/reports", async (req, res) => {
+app.get("/api/reports", requireAuth, requireRole('admin'), async (req, res) => {
     const { examDate, reportType } = req.query;
     const filters = [];
     const params = [];
@@ -2088,7 +2521,7 @@ app.get("/api/reports", async (req, res) => {
     }
 });
 
-app.get("/api/reports/:reportId/download", async (req, res) => {
+app.get("/api/reports/:reportId/download", requireAuth, requireRole('admin'), async (req, res) => {
     try {
         const [rows] = await db.promise().query(
             `SELECT report_name, filepath FROM Reports WHERE report_id = ?`,
@@ -2100,18 +2533,87 @@ app.get("/api/reports/:reportId/download", async (req, res) => {
         }
 
         const report = rows[0];
-        if (!report.filepath || !fs.existsSync(report.filepath)) {
+        if (!report.filepath) {
             return res.status(404).json({ message: "Report file not found" });
         }
 
-        return res.download(report.filepath, `${report.report_name}.pdf`);
+        const resolvedPath = path.resolve(report.filepath);
+        const resolvedBaseDir = path.resolve(generatedReportsDir);
+        if (!resolvedPath.startsWith(resolvedBaseDir + path.sep) && resolvedPath !== resolvedBaseDir) {
+            return res.status(403).json({ message: "Access denied to requested file path" });
+        }
+
+        if (!fs.existsSync(resolvedPath)) {
+            return res.status(404).json({ message: "Report file not found" });
+        }
+
+        return res.download(resolvedPath, `${report.report_name}.pdf`);
     } catch (error) {
         console.error("Download Report Error:", error);
         res.status(500).json({ message: "Failed to download report" });
     }
 });
 
-app.get("/api/reports/hall-seating/:date", async (req, res) => {
+// Bulk delete reports (database records & disk files)
+app.delete("/api/reports/bulk", requireAuth, requireRole('admin'), async (req, res) => {
+    const { reportIds } = req.body;
+    if (!Array.isArray(reportIds) || reportIds.length === 0) {
+        return res.status(400).json({ message: "No reports selected for deletion" });
+    }
+
+    try {
+        const [rows] = await db.promise().query(
+            `SELECT filepath FROM Reports WHERE report_id IN (?)`,
+            [reportIds]
+        );
+
+        for (const row of rows) {
+            if (row.filepath) {
+                const resolvedPath = path.resolve(row.filepath);
+                const resolvedBaseDir = path.resolve(generatedReportsDir);
+                if (resolvedPath.startsWith(resolvedBaseDir + path.sep) && fs.existsSync(resolvedPath)) {
+                    try { fs.unlinkSync(resolvedPath); } catch (e) {}
+                }
+            }
+        }
+
+        await db.promise().query(
+            `DELETE FROM Reports WHERE report_id IN (?)`,
+            [reportIds]
+        );
+
+        res.json({ message: `Successfully deleted ${reportIds.length} report(s)` });
+    } catch (error) {
+        console.error("Bulk Delete Reports Error:", error);
+        res.status(500).json({ message: "Failed to delete reports" });
+    }
+});
+
+// Single delete report
+app.delete("/api/reports/:id", requireAuth, requireRole('admin'), async (req, res) => {
+    try {
+        const [rows] = await db.promise().query(
+            `SELECT filepath FROM Reports WHERE report_id = ?`,
+            [req.params.id]
+        );
+
+        if (rows.length && rows[0].filepath) {
+            const resolvedPath = path.resolve(rows[0].filepath);
+            const resolvedBaseDir = path.resolve(generatedReportsDir);
+            if (resolvedPath.startsWith(resolvedBaseDir + path.sep) && fs.existsSync(resolvedPath)) {
+                try { fs.unlinkSync(resolvedPath); } catch (e) {}
+            }
+        }
+
+        await db.promise().query(`DELETE FROM Reports WHERE report_id = ?`, [req.params.id]);
+        res.json({ message: "Report deleted successfully" });
+    } catch (error) {
+        console.error("Delete Report Error:", error);
+        res.status(500).json({ message: "Failed to delete report" });
+    }
+});
+
+app.get("/api/reports/hall-seating/:date", requireAuth, requireRole('admin'), async (req, res) => {
     const examDate = req.params.date;
 
     try {
@@ -2146,38 +2648,10 @@ app.get("/api/reports/hall-seating/:date", async (req, res) => {
 // ----------------------------------------------------------------------------
 
 
-// --- JWT Middleware ---
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        console.log("No token provided");
-        return res.sendStatus(401);
-    }
-
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) {
-            console.log("JWT Verification Error:", err.message);
-            return res.sendStatus(403);
-        }
-        
-        console.log("Logged in user data:", user); // Check if role exists here
-
-        if (user.role !== 'student') {
-            console.log(`Access denied for role: ${user.role}`);
-            return res.status(403).json({ message: "Role must be 'student'" });
-        }
-        
-        req.user = user;
-        next();
-    });
-};
-
 // --- API Routes ---
 
 // 2. Get Profile
-app.get('/api/student/profile', authenticateToken, (req, res) => {
+app.get('/api/student/profile', requireAuth, requireRole('student'), (req, res) => {
     db.query('SELECT * FROM Student WHERE username = ?', [req.user.username], (err, results) => {
         if (err) {
             console.error("Database Error (Profile):", err); // <--- This logs it to your terminal
@@ -2188,112 +2662,169 @@ app.get('/api/student/profile', authenticateToken, (req, res) => {
 });
 
 // 3. Get Seating
-app.get('/api/student/seating', authenticateToken, (req, res) => {
+app.get('/api/student/seating', requireAuth, requireRole('student'), (req, res) => {
     const usernameFromToken = req.user.username;
-    console.log("Fetching seating for username:", usernameFromToken);
 
-    db.query('SELECT * FROM Seating_allocation WHERE username = ?', [usernameFromToken], (err, results) => {
+    const query = `
+        SELECT 
+            sa.*, 
+            es.exam_date, 
+            es.subject, 
+            es.sub_code
+        FROM Seating_allocation sa
+        LEFT JOIN Exam_schedule es ON sa.exam_id = es.exam_id
+        WHERE sa.username = ?
+        ORDER BY es.exam_date ASC, sa.session ASC
+    `;
+
+    db.query(query, [usernameFromToken], (err, results) => {
         if (err) {
-            console.error("Database Error:", err);
+            console.error("Database Error (Seating):", err);
             return res.status(500).json(err);
         }
-        console.log("Database Results Found:", results.length);
-        console.log("Full Results:", results); // See what's actually inside
         res.json(results);
     });
 });
 
 // 4. Get Exam Timetable (Joining Seating and Exam Schedule)
-app.get('/api/student/exams', authenticateToken, (req, res) => {
+app.get('/api/student/exams', requireAuth, requireRole('student'), async (req, res) => {
     const username = req.user.username;
-    const query = `
-        SELECT 
-            es.exam_number,
-            es.subject, 
-            es.sub_code, 
-            es.exam_date, 
-            es.session
-        FROM Seating_allocation sa
-        JOIN Exam_schedule es ON sa.exam_id = es.exam_id
-        WHERE sa.username = ?
-        ORDER BY es.exam_date ASC
-    `;
-    db.query(query, [username], (err, results) => {
-        if (err) return res.status(500).json({ error: "Failed to fetch timetable" });
-        res.json(results);
-    });
+
+    const getSessionRank = (sessionValue) => {
+        const normalized = String(sessionValue || "").trim().toUpperCase();
+        if (normalized === "FN") return 1;
+        if (normalized === "AN") return 2;
+        if (normalized === "BOTH") return 3;
+        return 4;
+    };
+
+    const normalizeExamRows = (rows, studentBranch) => {
+        const studentCanonical = canonicalBranch(studentBranch);
+        const seen = new Set();
+
+        const mapped = (rows || [])
+            .filter((row) => {
+                // Only filter by branch — show all exam dates/sessions for the student's branch
+                if (!studentCanonical) return true;
+                const rowCanonical = canonicalBranch(row.branch || row.Branch || "");
+                return rowCanonical === studentCanonical;
+            })
+            .map((row) => ({
+                exam_number: row.exam_number ?? row.examNo ?? row.exam ?? row.Exam ?? null,
+                subject: row.subject ?? row.Subject ?? "",
+                sub_code: row.sub_code ?? row.subCode ?? row.code ?? row.Code ?? "",
+                exam_date: row.exam_date ?? row.examDate ?? row.date ?? row.Date ?? null,
+                session: row.session ?? row.Session ?? "",
+                year: row.year ?? null
+            }))
+            .filter((row) => row.exam_date && row.session && (row.subject || row.sub_code))
+            .filter((row) => {
+                const key = `${row.exam_date}__${row.session}__${row.sub_code}__${row.subject}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+
+        mapped.sort((a, b) => {
+            const dateDiff = new Date(a.exam_date).getTime() - new Date(b.exam_date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return getSessionRank(a.session) - getSessionRank(b.session);
+        });
+
+        return mapped;
+    };
+
+
+    try {
+        const [profileRows] = await db.promise().query(
+            'SELECT * FROM Student WHERE username = ? LIMIT 1',
+            [username]
+        );
+
+        if (!profileRows.length) {
+            return res.json([]);
+        }
+
+        const student = profileRows[0] || {};
+        const studentBranch = String(student.branch || student.Branch || "").trim();
+
+        // Dynamically compute student's academic year based on latest join year in the system
+        const [[maxRow]] = await db.promise().query('SELECT MAX(year_of_join) AS maxYear FROM Student');
+        const baseYear = (maxRow && maxRow.maxYear) ? Number(maxRow.maxYear) : new Date().getFullYear();
+        const joinYear = Number(student.year_of_join || student.yearOfJoin || student.join_year || 0);
+        const fallbackAcademicYear = (Number.isFinite(joinYear) && joinYear > 0) ? (baseYear - joinYear + 1) : 0;
+        const studentYear = Number(student.year || student.academic_year || student.academicYear || fallbackAcademicYear || 0);
+
+        let examRows = [];
+        try {
+            const [rows] = await db.promise().query('SELECT * FROM Exam_schedule');
+            examRows = rows;
+        } catch (tblErr) {
+            if (tblErr.code === 'ER_NO_SUCH_TABLE') {
+                const [fallbackRows] = await db.promise().query('SELECT * FROM exam_schedule');
+                examRows = fallbackRows;
+            } else {
+                throw tblErr;
+            }
+        }
+
+        return res.json(normalizeExamRows(examRows, studentBranch));
+    } catch (err) {
+        console.error("Database Error (Student Exams):", err);
+        return res.status(500).json({ error: "Failed to fetch timetable" });
+    }
 });
 
 /* -------------------------------------------------------------------------- */
-app.get('/api/teacher/dashboard', (req, res) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+app.get('/api/teacher/dashboard', requireAuth, requireRole('teacher'), (req, res) => {
+    const user = req.user;
 
-    if (!token) {
-        return res.status(401).json({ message: 'No token provided' });
-    }
+    const teacherQuery = `
+        SELECT username, name
+        FROM Teacher
+        WHERE username = ?
+        LIMIT 1
+    `;
 
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) {
-            return res.status(403).json({ message: 'Invalid token' });
+    const dutyQuery = `
+        SELECT 
+            d.exam_date,
+            d.session,
+            CONCAT(d.block, ' ', d.room_no) AS exam_hall
+        FROM Duty_allocation d
+        WHERE d.Tusername = ?
+        ORDER BY d.exam_date ASC,
+                 FIELD(d.session, 'FN', 'AN', 'Both'),
+                 d.block ASC,
+                 d.room_no ASC
+    `;
+
+    db.query(teacherQuery, [user.username], (teacherErr, teacherResults) => {
+        if (teacherErr) {
+            console.error('Teacher lookup failed:', teacherErr);
+            return res.status(500).json({ message: 'Failed to fetch teacher details' });
         }
 
-        if (String(user.role || '').toLowerCase() !== 'teacher') {
-            return res.status(403).json({ message: "Role must be 'teacher'" });
+        if (!teacherResults.length) {
+            return res.status(404).json({ message: 'Teacher not found' });
         }
 
-        const teacherQuery = `
-            SELECT username, name
-            FROM Teacher
-            WHERE username = ?
-            LIMIT 1
-        `;
-
-        const dutyQuery = `
-            SELECT 
-                d.exam_date,
-                d.session,
-                CONCAT(d.block, ' ', d.room_no) AS exam_hall
-            FROM Duty_allocation d
-            WHERE d.Tusername = ?
-            ORDER BY d.exam_date ASC,
-                     FIELD(d.session, 'FN', 'AN', 'Both'),
-                     d.block ASC,
-                     d.room_no ASC
-        `;
-
-        db.query(teacherQuery, [user.username], (teacherErr, teacherResults) => {
-            if (teacherErr) {
-                console.error('Teacher lookup failed:', teacherErr);
-                return res.status(500).json({ message: 'Failed to fetch teacher details' });
+        db.query(dutyQuery, [user.username], (dutyErr, dutyResults) => {
+            if (dutyErr) {
+                console.error('Teacher duties lookup failed:', dutyErr);
+                return res.status(500).json({ message: 'Failed to fetch duty schedule' });
             }
 
-            if (!teacherResults.length) {
-                return res.status(404).json({ message: 'Teacher not found' });
-            }
-
-            db.query(dutyQuery, [user.username], (dutyErr, dutyResults) => {
-                if (dutyErr) {
-                    console.error('Teacher duties lookup failed:', dutyErr);
-                    return res.status(500).json({ message: 'Failed to fetch duty schedule' });
-                }
-
-                return res.json({
-                    teacher: teacherResults[0],
-                    duties: dutyResults
-                });
+            return res.json({
+                teacher: teacherResults[0],
+                duties: dutyResults
             });
         });
     });
 });
 
-app.post('/api/teacher/unavailability', (req, res) => {
-    const user = verifyRequestToken(req, res, 'teacher');
-
-    if (!user) {
-        return;
-    }
-
+app.post('/api/teacher/unavailability', requireAuth, requireRole('teacher'), (req, res) => {
+    const user = req.user;
     const examDate = String(req.body.examDate || '').trim();
     const session = String(req.body.session || '').trim();
     const reason = String(req.body.reason || '').trim();
@@ -2334,7 +2865,7 @@ app.post('/api/teacher/unavailability', (req, res) => {
     });
 });
 
-app.get('/api/admin/requests/unread-count', async (req, res) => {
+app.get('/api/admin/requests/unread-count', requireAuth, requireRole('admin'), async (req, res) => {
     try {
         await ensureRequestTables();
 
@@ -2352,14 +2883,22 @@ app.get('/api/admin/requests/unread-count', async (req, res) => {
             [lastSeenId]
         );
 
-        res.json({ unreadCount: Number(countRow.unreadCount || 0) });
+        const [[totalRow]] = await db.promise().query(
+            `SELECT COUNT(*) AS pendingCount
+             FROM teacher_unavailability`
+        );
+
+        res.json({
+            unreadCount: Number(countRow.unreadCount || 0),
+            pendingCount: Number(totalRow.pendingCount || 0)
+        });
     } catch (error) {
         console.error('Failed to fetch unread request count:', error);
         res.status(500).json({ message: 'Failed to fetch unread request count.' });
     }
 });
 
-app.post('/api/admin/requests/mark-read', async (req, res) => {
+app.post('/api/admin/requests/mark-read', requireAuth, requireRole('admin'), async (req, res) => {
     try {
         await ensureRequestTables();
 
@@ -2382,7 +2921,7 @@ app.post('/api/admin/requests/mark-read', async (req, res) => {
     }
 });
 
-app.get('/api/admin/requests', (req, res) => {
+app.get('/api/admin/requests', requireAuth, requireRole('admin'), (req, res) => {
     ensureRequestTables().then(() => {
         db.query(
             `SELECT
@@ -2411,7 +2950,7 @@ app.get('/api/admin/requests', (req, res) => {
     });
 });
 
-app.post('/api/admin/requests/:id/decision', async (req, res) => {
+app.post('/api/admin/requests/:id/decision', requireAuth, requireRole('admin'), async (req, res) => {
     try {
         await ensureRequestTables();
 
@@ -2472,69 +3011,78 @@ app.post('/api/admin/requests/:id/decision', async (req, res) => {
 /* -------------------------------------------------------------------------- */
 
 // 1. GET: Fetch duty summary
-app.get('/api/duties/summary', (req, res) => {
+app.get('/api/duties/summary', requireAuth, requireRole('admin'), async (req, res) => {
     let { date, session } = req.query;
-    if (!date || !session) return res.status(400).json({ error: "Missing date or session" });
+    const formattedDate = safeFormatDate(date);
+    if (!formattedDate || !session) return res.status(400).json({ error: "Missing or invalid date or session" });
 
-    // FIX: This method extracts YYYY-MM-DD without shifting timezones
-    const d = new Date(date);
-    const formattedDate = d.getFullYear() + '-' + 
-                          String(d.getMonth() + 1).padStart(2, '0') + '-' + 
-                          String(d.getDate()).padStart(2, '0');
-
-    console.log(`[Universal Summary Check] Fetching for: ${formattedDate} (${session})`);
-
-    // Query 1: Get rooms from seating allocation
-    const roomQuery = `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`;
-
-    db.query(roomQuery, [formattedDate, session], (err, roomResults) => {
-        if (err) return res.status(500).json({ error: "Room Query Failed", details: err });
-
+    try {
         let required = 0;
         let hasAllocation = false;
+
+        // Query 1: Get rooms from Allocation_History first
+        const [roomResults] = await db.promise().query(
+            `SELECT selected_rooms FROM Allocation_History WHERE DATE(exam_date) = ? AND session = ? ORDER BY updated_at DESC LIMIT 1`,
+            [formattedDate, session]
+        );
 
         if (roomResults.length > 0 && roomResults[0].selected_rooms) {
             try {
                 const rooms = JSON.parse(roomResults[0].selected_rooms);
-                required = rooms.length;
-                hasAllocation = true;
+                if (Array.isArray(rooms) && rooms.length > 0) {
+                    required = rooms.length;
+                    hasAllocation = true;
+                }
             } catch (e) {
                 console.error("Error parsing rooms:", e);
             }
         }
 
-        // Query 2: Get available teachers (Must have duty_count > 0)
-        const teacherQuery = `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`;
-        
-        db.query(teacherQuery, (err, teacherResults) => {
-            if (err) return res.status(500).json({ error: "Teacher Query Failed", details: err });
+        // Fallback: If not in Allocation_History, check Seating_allocation directly
+        if (!hasAllocation) {
+            const [seatRooms] = await db.promise().query(`
+                SELECT DISTINCT CONCAT(sa.block, sa.room_no) as roomFull
+                FROM Seating_allocation sa
+                JOIN Exam_schedule es ON es.exam_id = sa.exam_id
+                WHERE DATE(es.exam_date) = ? AND (es.session = ? OR sa.session = ?)
+            `, [formattedDate, session, session]);
 
-            // Query 3: Check if duties are already generated
-            // We use a JOIN or a subquery to ensure the session matches the exam_id
-            const checkGeneratedQuery = `
-                SELECT COUNT(*) as dutyCount 
-                FROM Duty_allocation d
-                JOIN Exam_schedule e ON d.exam_id = e.exam_id
-                WHERE d.exam_date = ? AND e.session = ?`;
+            if (seatRooms.length > 0) {
+                required = seatRooms.length;
+                hasAllocation = true;
+            }
+        }
 
-            db.query(checkGeneratedQuery, [formattedDate, session], (err, checkResults) => {
-                if (err) return res.status(500).json({ error: "Check Generated Failed", details: err });
+        // Query 2: Get available teachers (Must have duty_count > 0 and availability YES)
+        const [[teacherResult]] = await db.promise().query(
+            `SELECT COUNT(*) as availableCount FROM Teacher WHERE UPPER(availability) = 'YES' AND duty_count > 0`
+        );
 
-                res.json({
-                    required,
-                    available: teacherResults[0].availableCount,
-                    hasAllocation,
-                    isGenerated: checkResults[0].dutyCount > 0
-                });
-            });
+        // Query 3: Check if duties are already generated for this exact slot
+        const [[dutyResult]] = await db.promise().query(
+            `SELECT COUNT(*) as dutyCount FROM Duty_allocation WHERE DATE(exam_date) = ? AND session = ?`,
+            [formattedDate, session]
+        );
+
+        res.json({
+            required,
+            available: Number(teacherResult?.availableCount || 0),
+            hasAllocation,
+            isGenerated: Number(dutyResult?.dutyCount || 0) > 0
         });
-    });
+    } catch (err) {
+        console.error("Duties summary error:", err);
+        res.status(500).json({ error: "Duty summary check failed", details: err.message });
+    }
 });
 
 // 2. POST: Generate Duties with Fair Workload Balancing
-app.post('/api/duties/generate', async (req, res) => {
+app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, res) => {
     const { date, session } = req.body;
-    const formattedDate = new Date(date).toISOString().split('T')[0];
+    const formattedDate = safeFormatDate(date);
+    if (!formattedDate || !session) {
+        return res.status(400).json({ message: "Valid date and session are required." });
+    }
     const slotKey = getDutySlotKey(formattedDate, session);
 
     const connection = await db.promise().getConnection();
@@ -2550,27 +3098,47 @@ app.post('/api/duties/generate', async (req, res) => {
         const exam_id = exams[0].exam_id;
 
         // B. Get the list of rooms allocated for this exam
+        let selectedRooms = [];
         const [alloc] = await connection.query(
             `SELECT selected_rooms FROM Allocation_History WHERE exam_date = ? AND session = ?`, 
             [formattedDate, session]
         );
-        if (!alloc.length) throw new Error("No Seating Allocation found. Please generate seating first.");
-        const selectedRooms = JSON.parse(alloc[0].selected_rooms);
 
-        // C. WORKLOAD RESTORE: If re-generating, give points back to previously assigned teachers
+        if (alloc.length > 0 && alloc[0].selected_rooms) {
+            try {
+                selectedRooms = JSON.parse(alloc[0].selected_rooms);
+            } catch (e) {}
+        }
+
+        // Fallback: check Seating_allocation if Allocation_History was missing
+        if (!selectedRooms.length) {
+            const [seatRooms] = await connection.query(`
+                SELECT DISTINCT CONCAT(sa.block, sa.room_no) as roomFull
+                FROM Seating_allocation sa
+                JOIN Exam_schedule es ON es.exam_id = sa.exam_id
+                WHERE es.exam_date = ? AND (es.session = ? OR sa.session = ?)
+            `, [formattedDate, session, session]);
+            selectedRooms = seatRooms.map(r => r.roomFull);
+        }
+
+        if (!selectedRooms.length) {
+            throw new Error("No Seating Allocation found. Please generate seating first.");
+        }
+
+        // C. WORKLOAD RESTORE: If re-generating, give points back to previously assigned teachers for this slot
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
-            [formattedDate, exam_id]
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+            [formattedDate, session]
         );
-        const previousUsernames = prevDuties.map(d => d.Tusername);
-        if (prevDuties.length > 0) {
+        const previousUsernames = prevDuties.map(d => d.Tusername).filter(Boolean);
+        if (previousUsernames.length > 0) {
             await connection.query(
                 `UPDATE Teacher SET duty_count = duty_count + 1 WHERE username IN (?)`,
                 [previousUsernames]
             );
             await connection.query(
-                `DELETE FROM Duty_allocation WHERE exam_date = ? AND exam_id = ?`,
-                [formattedDate, exam_id]
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+                [formattedDate, session]
             );
         }
 
@@ -2601,16 +3169,18 @@ app.post('/api/duties/generate', async (req, res) => {
         // E. Map teachers to rooms and prepare for bulk insert
         const assignedUsernames = [];
         const dutyValues = selectedRooms.map((roomFull, index) => {
-            const block = roomFull.match(/[A-Za-z]+/)[0];
-            const room_no = roomFull.match(/\d+/)[0];
+            const blockMatch = roomFull.match(/[A-Za-z]+/);
+            const roomMatch = roomFull.match(/\d+/);
+            const block = blockMatch ? blockMatch[0] : "";
+            const room_no = roomMatch ? roomMatch[0] : "";
             const tUser = teacherPool[index].username;
             assignedUsernames.push(tUser);
-            return [exam_id, room_no, block, tUser, formattedDate];
+            return [exam_id, room_no, block, tUser, formattedDate, session];
         });
 
         // F. Finalize: Save assignments and decrement duty points
         await connection.query(
-            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date) VALUES ?`,
+            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date, session) VALUES ?`,
             [dutyValues]
         );
 
@@ -2654,6 +3224,7 @@ app.post('/api/duties/generate', async (req, res) => {
 
     } catch (err) {
         await connection.rollback();
+        console.error("Generate duties error:", err);
         res.status(500).json({ message: err.message });
     } finally {
         connection.release();
@@ -2661,17 +3232,16 @@ app.post('/api/duties/generate', async (req, res) => {
 });
 
 // 3. GET: Fetch the assigned duty list for the table
-app.get('/api/duties/list', (req, res) => {
+app.get('/api/duties/list', requireAuth, requireRole('admin'), (req, res) => {
     const { date, session } = req.query;
-    if (!date) return res.status(400).json({ error: "Date is required" });
-    const formattedDate = new Date(date).toISOString().split('T')[0];
+    const formattedDate = safeFormatDate(date);
+    if (!formattedDate || !session) return res.status(400).json({ error: "Valid date and session are required" });
 
     const query = `
         SELECT d.room_no, d.block, d.Tusername, t.name as teacher_name
         FROM Duty_allocation d
-        JOIN Teacher t ON d.Tusername = t.username
-        JOIN Exam_schedule e ON d.exam_id = e.exam_id
-        WHERE d.exam_date = ? AND e.session = ?
+        LEFT JOIN Teacher t ON d.Tusername = t.username
+        WHERE DATE(d.exam_date) = ? AND d.session = ?
         ORDER BY d.block ASC, d.room_no ASC
     `;
     db.query(query, [formattedDate, session], (err, results) => {
@@ -2681,7 +3251,7 @@ app.get('/api/duties/list', (req, res) => {
 });
 
 // 4. GET: Helper for Calendar highlighting (Unique Exam Dates)
-app.get('/api/exam-dates-only', (req, res) => {
+app.get('/api/exam-dates-only', requireAuth, requireRole('admin'), (req, res) => {
     const query = 'SELECT DISTINCT exam_date FROM Exam_schedule ORDER BY exam_date ASC';
     db.query(query, (err, results) => {
         if (err) return res.status(500).json(err);
@@ -2690,10 +3260,10 @@ app.get('/api/exam-dates-only', (req, res) => {
 });
 
 // 4b. GET: Exam Status Board data (slot-wise seating + duty status)
-app.get('/api/exam-status-board', (req, res) => {
+app.get('/api/exam-status-board', requireAuth, requireRole('admin'), (req, res) => {
     const query = `
         SELECT
-            slots.exam_date,
+            DATE_FORMAT(slots.exam_date, '%Y-%m-%d') AS exam_date,
             slots.session,
             CASE
                 WHEN EXISTS (
@@ -2701,7 +3271,12 @@ app.get('/api/exam-status-board', (req, res) => {
                     FROM Seating_allocation sa
                     JOIN Exam_schedule es2 ON es2.exam_id = sa.exam_id
                     WHERE es2.exam_date = slots.exam_date
-                      AND es2.session = slots.session
+                      AND (es2.session = slots.session OR sa.session = slots.session)
+                ) OR EXISTS (
+                    SELECT 1
+                    FROM Allocation_History ah
+                    WHERE ah.exam_date = slots.exam_date
+                      AND ah.session = slots.session
                 ) THEN 1
                 ELSE 0
             END AS seating_done,
@@ -2709,11 +3284,8 @@ app.get('/api/exam-status-board', (req, res) => {
                 WHEN EXISTS (
                     SELECT 1
                     FROM Duty_allocation da
-                    JOIN Exam_schedule es3 ON es3.exam_id = da.exam_id
                     WHERE da.exam_date = slots.exam_date
-                      AND es3.session = slots.session
-                    WHERE da.exam_date = slots.exam_date
-                      AND es3.session = slots.session
+                      AND da.session = slots.session
                 ) THEN 1
                 ELSE 0
             END AS duty_done
@@ -2736,9 +3308,10 @@ app.get('/api/exam-status-board', (req, res) => {
 });
 
 // 5. DELETE: Remove duty allocation and RESTORE points
-app.delete('/api/duties/delete', async (req, res) => {
+app.delete('/api/duties/delete', requireAuth, requireRole('admin'), async (req, res) => {
     const { date, session } = req.body;
-    const formattedDate = new Date(date).toISOString().split('T')[0];
+    const formattedDate = safeFormatDate(date);
+    if (!formattedDate || !session) return res.status(400).json({ message: "Valid date and session are required." });
     const slotKey = getDutySlotKey(formattedDate, session);
 
     const connection = await db.promise().getConnection();
@@ -2747,23 +3320,25 @@ app.delete('/api/duties/delete', async (req, res) => {
 
         // Find teachers assigned to this specific slot
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
+            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
             [formattedDate, session]
         );
 
         if (prevDuties.length > 0) {
-            const usernames = prevDuties.map(d => d.Tusername);
+            const usernames = prevDuties.map(d => d.Tusername).filter(Boolean);
             recentDutyAssignments.set(slotKey, usernames);
             
             // 1. Give points back
-            await connection.query(
-                `UPDATE Teacher SET duty_count = duty_count + 1 WHERE username IN (?)`,
-                [usernames]
-            );
+            if (usernames.length > 0) {
+                await connection.query(
+                    `UPDATE Teacher SET duty_count = duty_count + 1 WHERE username IN (?)`,
+                    [usernames]
+                );
+            }
 
             // 2. Delete the actual duties
             await connection.query(
-                `DELETE FROM Duty_allocation WHERE exam_date = ? AND EXISTS (SELECT 1 FROM Exam_schedule WHERE exam_id = Duty_allocation.exam_id AND session = ?)`,
+                `DELETE FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
                 [formattedDate, session]
             );
         }
@@ -2772,16 +3347,28 @@ app.delete('/api/duties/delete', async (req, res) => {
         res.json({ message: "Allocation deleted and faculty points restored." });
     } catch (err) {
         await connection.rollback();
+        console.error("Delete duties error:", err);
         res.status(500).json({ message: err.message });
     } finally {
         connection.release();
     }
 });
 /* -------------------------------------------------------------------------- */
-/* SERVER START                                */
+/* SERVER START & ERROR HANDLING               */
 /* -------------------------------------------------------------------------- */
 
-const PORT = 5000;
+// 404 Catch-All Handler
+app.use((req, res) => {
+    res.status(404).json({ message: "API endpoint not found" });
+});
+
+// Centralized Error Handler
+app.use((err, req, res, next) => {
+    console.error("Unhandled Server Error:", err);
+    res.status(err.status || 500).json({
+        message: process.env.NODE_ENV === "production" ? "Internal server error" : (err.message || "Internal server error")
+    });
+});
 
 app.listen(PORT, () => {
     console.log("-------------------------------------------");

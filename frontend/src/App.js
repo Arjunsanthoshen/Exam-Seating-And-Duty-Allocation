@@ -17,30 +17,36 @@ import ExamHall from "./pages/Student/ExamHall";
 import StudentProfilePage from "./pages/Student/StudentProfilePage";
 import ExamTimeTable from "./pages/Student/ExamTimeTable";
 
+import ProtectedRoute from "./components/ProtectedRoute";
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public Routes */}
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
 
-        <Route path="/ExamStatusBoard" element={<ExamStatus />} />
-        <Route path="/ManageStudents" element={<ManageStudents />} />
-        <Route path="/ManageTeachers" element={<ManageTeachers />} />
-        <Route path="/ManageRooms" element={<ManageRooms />} />
-        <Route path="/ExamSchedule" element={<ExamSchedule />} />
-        <Route path="/GenerateSeating" element={<GenerateSeating />} />
-        <Route path="/GenerateDuties" element={<GenerateDuties />} />
-        <Route path="/Reports" element={<Reports />} />
-        <Route path="/Requests" element={<Requests />} />
+        {/* Admin Protected Routes */}
+        <Route path="/ExamStatusBoard" element={<ProtectedRoute allowedRole="admin"><ExamStatus /></ProtectedRoute>} />
+        <Route path="/ManageStudents" element={<ProtectedRoute allowedRole="admin"><ManageStudents /></ProtectedRoute>} />
+        <Route path="/ManageTeachers" element={<ProtectedRoute allowedRole="admin"><ManageTeachers /></ProtectedRoute>} />
+        <Route path="/ManageRooms" element={<ProtectedRoute allowedRole="admin"><ManageRooms /></ProtectedRoute>} />
+        <Route path="/ExamSchedule" element={<ProtectedRoute allowedRole="admin"><ExamSchedule /></ProtectedRoute>} />
+        <Route path="/GenerateSeating" element={<ProtectedRoute allowedRole="admin"><GenerateSeating /></ProtectedRoute>} />
+        <Route path="/GenerateDuties" element={<ProtectedRoute allowedRole="admin"><GenerateDuties /></ProtectedRoute>} />
+        <Route path="/Reports" element={<ProtectedRoute allowedRole="admin"><Reports /></ProtectedRoute>} />
+        <Route path="/Requests" element={<ProtectedRoute allowedRole="admin"><Requests /></ProtectedRoute>} />
 
-        <Route path="/MyDutySchedule" element={<MyDutySchedule />} />
-        <Route path="/MarkUnavailability" element={<MarkUnavailability />} />
+        {/* Teacher Protected Routes */}
+        <Route path="/MyDutySchedule" element={<ProtectedRoute allowedRole="teacher"><MyDutySchedule /></ProtectedRoute>} />
+        <Route path="/MarkUnavailability" element={<ProtectedRoute allowedRole="teacher"><MarkUnavailability /></ProtectedRoute>} />
 
-        <Route path="/ExamHall" element={<ExamHall />} />
-        <Route path="/StudentProfile" element={<StudentProfilePage />} />
-        <Route path="/ExamTimeTable" element={<ExamTimeTable />} />
+        {/* Student Protected Routes */}
+        <Route path="/ExamHall" element={<ProtectedRoute allowedRole="student"><ExamHall /></ProtectedRoute>} />
+        <Route path="/StudentProfile" element={<ProtectedRoute allowedRole="student"><StudentProfilePage /></ProtectedRoute>} />
+        <Route path="/ExamTimeTable" element={<ProtectedRoute allowedRole="student"><ExamTimeTable /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );

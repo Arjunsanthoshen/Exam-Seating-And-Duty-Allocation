@@ -1,50 +1,540 @@
-:root {
-    --bg-blue: #e3eefc;
-    --sidebar-blue: #d6e4f7;
-    --card-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
-}
+/* ==========================================================================
+   STUDENT EXAM HALL — MODERN DARK GLASSMORPHIC AESTHETIC
+   ========================================================================== */
 
-body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-blue); }
+:root {
+  --student-bg: linear-gradient(135deg, #0a0f1d 0%, #0f172a 40%, #020617 100%);
+  --student-glass-card: rgba(255, 255, 255, 0.05);
+  --student-glass-border: rgba(255, 255, 255, 0.1);
+  --student-glass-shadow: 0 20px 45px -15px rgba(0, 0, 0, 0.5), 0 0 1px 1px rgba(255, 255, 255, 0.05);
+  --student-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
 
 .studashboard-container {
-    display: flex;
-    height: 100vh;
-    padding-left: 50px; /* To account for fixed sidebar */
+  display: flex;
+  min-height: 100vh;
+  width: 100vw;
+  background: var(--student-bg);
+  font-family: var(--student-font);
+  color: #f8fafc;
+  position: relative;
+  overflow-x: hidden;
 }
 
-.main-content {
-    flex: 1;
-    padding: 40px;
+.studashboard-container .main-content {
+  flex: 1;
+  margin-left: 0 !important;
+  width: calc(100vw - 280px) !important;
+  max-width: calc(100vw - 280px) !important;
+  padding: 32px 40px 48px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.top-bar {
-    background: #cfe0f5;
-    padding: 15px 30px;
-    border-radius: 12px;
-    margin-bottom: 30px;
+/* --------------------------------------------------------------------------
+   LOADING STATE
+   -------------------------------------------------------------------------- */
+.student-loading-card {
+  margin-top: 60px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 40px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: var(--student-glass-shadow);
 }
 
-.content-card {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(4px);
-    border-radius: 20px;
-    padding: 30px;
-    box-shadow: var(--card-shadow);
-    border: 1px solid rgba(255, 255, 255, 0.18);
+.student-loading-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: studentSpin 0.9s linear infinite;
 }
 
-.info-row {
-    background: #f8fafd;
-    border: 1px solid #e0e6ed;
-    border-radius: 10px;
-    padding: 15px 20px;
-    margin-bottom: 15px;
-    font-size: 1.1rem;
-    color: #333;
+@keyframes studentSpin {
+  to { transform: rotate(360deg); }
 }
 
-/* Responsive */
+/* --------------------------------------------------------------------------
+   HEADER
+   -------------------------------------------------------------------------- */
+.student-top-bar {
+  width: 100%;
+  max-width: 1200px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  color: #ffffff;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.student-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.student-portal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #7dd3fc;
+  background: rgba(14, 165, 233, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 5px 12px;
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.student-top-bar h2 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.student-subhead {
+  margin: 0;
+  font-size: 0.94rem;
+  color: #94a3b8;
+}
+
+.student-header-right {
+  display: flex;
+  align-items: center;
+}
+
+.student-id-pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 10px 18px;
+  border-radius: 14px;
+}
+
+.student-pill-icon {
+  font-size: 1.4rem;
+  color: #38bdf8;
+}
+
+.student-pill-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.student-pill-roll {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #ffffff;
+}
+
+.student-pill-meta {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+/* --------------------------------------------------------------------------
+   CONTENT CONTAINER (DARK GLASSMORPHIC)
+   -------------------------------------------------------------------------- */
+.student-content-card {
+  background: var(--student-glass-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 24px;
+  padding: 34px;
+  box-shadow: var(--student-glass-shadow);
+  border: 1px solid var(--student-glass-border);
+  width: 100%;
+  max-width: 1200px;
+  box-sizing: border-box;
+}
+
+/* --------------------------------------------------------------------------
+   EXPANDED EXAM PASS & TABS
+   -------------------------------------------------------------------------- */
+.expanded-hall-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+/* Multi-Exam Switcher Tabs (Dark) */
+.exam-selector-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px 20px;
+}
+
+.exam-tabs-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.exam-tabs-list {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.exam-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  text-align: left;
+}
+
+.exam-tab-btn:hover {
+  border-color: #38bdf8;
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.exam-tab-btn.active {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+}
+
+.tab-btn-icon {
+  font-size: 1.2rem;
+  color: #38bdf8;
+}
+
+.exam-tab-btn.active .tab-btn-icon {
+  color: #ffffff;
+}
+
+.tab-btn-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-subject {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.exam-tab-btn.active .tab-subject {
+  color: #ffffff;
+}
+
+.tab-date {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.exam-tab-btn.active .tab-date {
+  color: #e0f2fe;
+}
+
+/* Expanded Card Main (Dark Glassmorphic) */
+.expanded-hall-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.expanded-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+
+.expanded-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hall-sub-code-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 4px 10px;
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.expanded-subject-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+.expanded-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hall-date-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.hall-badge-icon {
+  color: #38bdf8;
+}
+
+.hall-session-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.hall-session-badge.FN {
+  background: rgba(14, 165, 233, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.hall-session-badge.AN {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+/* ==========================================================================
+   PRIMARY ALLOCATION GRID: 2 IN FIRST ROW, 2 IN SECOND ROW (DARK THEME)
+   ========================================================================== */
+.hall-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.hall-metric-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.hall-metric-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.hall-metric-box.highlight-room {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.14) 0%, rgba(2, 132, 199, 0.04) 100%);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.hall-metric-box.highlight-bench {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.14) 0%, rgba(124, 58, 237, 0.04) 100%);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+.hall-metric-box.highlight-seat {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(16, 185, 129, 0.04) 100%);
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.hall-metric-box.highlight-student {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.14) 0%, rgba(249, 115, 22, 0.04) 100%);
+  border-color: rgba(251, 146, 60, 0.3);
+}
+
+.metric-box-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+.highlight-room .metric-box-icon { color: #38bdf8; }
+.highlight-bench .metric-box-icon { color: #a78bfa; }
+.highlight-seat .metric-box-icon { color: #34d399; }
+.highlight-student .metric-box-icon { color: #fb923c; }
+
+.metric-box-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.metric-box-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.metric-box-val {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.metric-box-sub {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+/* Exam Day Guidelines Strip (Dark) */
+.exam-guidelines-strip {
+  display: flex;
+  gap: 20px;
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-left: 4px solid #38bdf8;
+  border-radius: 12px;
+  padding: 16px 20px;
+  flex-wrap: wrap;
+}
+
+.guideline-item {
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  flex: 1;
+  min-width: 240px;
+}
+
+.guideline-item strong {
+  color: #38bdf8;
+}
+
+/* --------------------------------------------------------------------------
+   EMPTY STATE (DARK)
+   -------------------------------------------------------------------------- */
+.empty-hall-state {
+  padding: 60px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.empty-icon-box {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.empty-hall-state h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.empty-hall-state p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.94rem;
+  max-width: 480px;
+  line-height: 1.5;
+}
+
+/* --------------------------------------------------------------------------
+   RESPONSIVENESS
+   -------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .hall-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 768px) {
-    .dashboard-container { flex-direction: column; }
-    .sidebar { width: 100%; height: auto; }
+  .studashboard-container {
+    flex-direction: column;
+  }
+  .expanded-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .expanded-header-right {
+    align-items: flex-start;
+  }
 }

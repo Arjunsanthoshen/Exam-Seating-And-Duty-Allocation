@@ -1,98 +1,218 @@
-/* Sidebar Container */
+/* ==========================================================================
+   STUDENT SIDEBAR — MODERN GLASSMORPHIC AESTHETIC
+   ========================================================================== */
+
 .student-sidebar {
   width: 280px;
-  background-color: #5b87c4;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
-  padding: 25px 0;
-  color: white;
-  height: 100vh;
+  padding: 28px 20px 24px;
   box-sizing: border-box;
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
-  position: fixed; /* Optional: keeps it locked to the side */
-  left: 0;
+  height: 100vh;
+  position: sticky;
   top: 0;
+  left: 0;
+  flex-shrink: 0;
+  z-index: 50;
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
 }
 
-/* Header/Label Area */
-.student-nav-label {
+.student-sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 25px 35px;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: white;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  gap: 14px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 24px;
 }
 
-/* Nav Grouping */
+.student-brand-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.35rem;
+  box-shadow: 0 8px 18px rgba(3, 105, 161, 0.4);
+}
+
+.student-brand-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.student-portal-tag {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #7dd3fc;
+}
+
+.student-brand-info h3 {
+  margin: 2px 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
 .student-nav-group {
   display: flex;
   flex-direction: column;
+  gap: 10px;
   flex: 1;
 }
 
-/* Navigation Buttons */
 .student-nav-item {
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 15px 25px;
-  border: none;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.94rem;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: 0.3s;
-  border-radius: 0 30px 30px 0;
-  margin-right: 15px;
-  width: calc(100% - 15px);
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
+  width: 100%;
 }
 
 .student-nav-item:hover:not(.active) {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  transform: translateX(3px);
 }
 
-/* Active State */
 .student-nav-item.active {
-  background-color: #4a74b1;
-  color: white;
-  font-weight: 600;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.25) 0%, rgba(3, 105, 161, 0.35) 100%);
+  color: #ffffff;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.25);
 }
 
-/* Icon Styling */
 .student-nav-icon {
-  font-size: 1.1rem;
-  width: 20px;
-  display: flex;
-  justify-content: center;
+  font-size: 1.15rem;
+  color: #7dd3fc;
+  flex-shrink: 0;
 }
 
-/* Logout Button at Bottom */
-.student-logout-btn {
+.student-nav-item.active .student-nav-icon {
+  color: #bae6fd;
+}
+
+.student-sidebar-footer {
   margin-top: auto;
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.student-user-chip {
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 15px 25px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.95rem;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.student-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.student-user-details {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.student-user-name {
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.student-user-role {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.student-logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: inherit;
   cursor: pointer;
-  transition: 0.3s;
-  border-radius: 0 30px 30px 0;
-  margin-right: 15px;
+  transition: all 0.2s ease;
+  width: 100%;
 }
 
 .student-logout-btn:hover {
-  background-color: #e63946; /* Red hover for logout */
-  color: white;
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   STUDENT DASHBOARD GLOBAL LAYOUT OVERRIDE (Fixes 256px offset)
+   -------------------------------------------------------------------------- */
+.studashboard-container {
+  display: flex;
+  min-height: 100vh;
+  width: 100vw;
+  background: linear-gradient(135deg, #0a0f1d 0%, #0f172a 40%, #020617 100%);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #f8fafc;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.studashboard-container .main-content {
+  margin-left: 0 !important;
+  width: calc(100vw - 280px) !important;
+  max-width: calc(100vw - 280px) !important;
+  flex: 1;
+  padding: 32px 40px 48px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }

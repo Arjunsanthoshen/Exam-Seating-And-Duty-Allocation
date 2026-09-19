@@ -1,273 +1,270 @@
-/* 1. Main Layout */
-.dashboard-container {
-    display: flex;
-    height: 100vh;
-    width: 100vw;
-    background: linear-gradient(135deg, #7ba6dc 0%, #5b87c4 100%);
-    overflow: hidden;
+/* ==========================================================================
+   ADMIN MANAGE ROOMS — MODERN GLASSMORPHIC AESTHETIC
+   ========================================================================== */
+
+/* Block Manage Strip */
+.block-manage-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
-.main-content {
-    flex: 1;
-    padding: 40px;
-    overflow-y: auto;
-    display: flex; /* Changed to flex to allow centering */
-    flex-direction: column;
-    align-items: center; /* Centers the card horizontally */
+.strip-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  color: #f1f5f9;
+  font-size: 0.92rem;
 }
 
-/* 2. The Card - Spacious but Balanced */
-.manage-card {
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(10px);
-    border-radius: 20px;
-    padding: 20px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-    
-    /* Center and Widen */
-    width: 95%; 
-    max-width: 1400px; /* High limit so it's wide, but won't look "stretched" */
-    margin-bottom: 40px;
-    box-sizing: border-box;
-    border: 1px solid rgba(255, 255, 255, 0.4);
+.strip-title svg {
+  color: #60a5fa;
 }
 
-.card-title {
-    color: #3d5d8a;
-    font-size: 1.8rem;
-    font-weight: 700;
-    margin-bottom: 35px;
-    border-left: 6px solid #7ba6dc;
-    padding-left: 20px;
+.strip-input-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-/* 3. Form Section - Clean Definition */
-.form-section {
-    background-color: #ffffff;
-    padding: 35px;
-    border-radius: 15px;
-    border: 1px solid #d1d9e6; /* Clean, defined border */
-    margin-bottom: 40px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+.strip-input-group input {
+  width: 220px;
 }
 
-.input-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr); 
-    gap: 35px;
-    margin-bottom: 30px;
+.strip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: all 0.2s ease;
 }
 
-.sub-title {
-    color: #5b87c4;
-    font-size: 1.15rem;
-    font-weight: 600;
-    margin: 25px 0;
-    display: flex;
-    align-items: center;
-    gap: 15px;
+.strip-btn.add {
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
 }
 
-.sub-title::after {
-    content: "";
-    flex: 1;
-    height: 1.5px;
-    background: #e2e8f0;
+.strip-btn.add:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
 }
 
-.benches-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr); 
-    gap: 25px;
-    margin-bottom: 40px;
+.strip-btn.remove {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
-/* 4. Inputs & Removing Room No Arrows */
-.input-box label {
-    font-weight: 600;
-    color: #4a5568;
-    margin-bottom: 12px;
-    font-size: 0.95rem;
+.strip-btn.remove:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
-.input-box input, .input-box select {
-    width: 100%;
-    height: 50px;
-    padding: 0 18px;
-    border: 2px solid #cbd5e0; /* Darker, crisp borders */
-    border-radius: 12px;
-    font-size: 1rem;
-    transition: border-color 0.2s, box-shadow 0.2s;
+/* Auto Capacity Chip */
+.auto-capacity-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  color: #93c5fd;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.94rem;
 }
 
-.input-box input:focus, .input-box select:focus {
-    border-color: #7ba6dc;
-    outline: none;
-    box-shadow: 0 0 0 4px rgba(123, 166, 220, 0.15);
+/* Column Selectors */
+.columns-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
 }
 
-/* Number Spinner Removal */
-input[type=number]::-webkit-inner-spin-button, 
-input[type=number]::-webkit-outer-spin-button { 
-  -webkit-appearance: none; 
-  margin: 0; 
+.column-selector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* 5. Toggle Buttons - Pill Style */
-.toggle-group {
-    display: flex;
-    gap: 15px;
+.col-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.toggle-btn {
-    flex: 1;
-    height: 50px;
-    border-radius: 12px;
-    border: 2px solid #cbd5e0;
-    background: white;
-    font-weight: 600;
-    color: #5b87c4;
-    cursor: pointer;
-    transition: 0.3s;
+/* Room Badges */
+.room-num-badge {
+  font-weight: 800;
+  color: #f1f5f9;
+  font-size: 0.95rem;
 }
 
-.toggle-btn.active {
-    background: #5b87c4;
-    color: white;
-    border-color: #5b87c4;
-    box-shadow: 0 4px 12px rgba(91, 135, 196, 0.3);
+.capacity-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
-/* 6. Action Button */
-.action-row {
-    display: flex;
-    justify-content: flex-end; /* Keeps the button clean on the right */
+/* Action Buttons & Table Styling */
+.table-actions-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.submit-batch-btn.small-btn {
-    padding: 15px 50px;
-    background: #5b87c4;
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-weight: 700;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: 0.3s;
-    box-shadow: 0 6px 15px rgba(91, 135, 196, 0.3);
+.delete-icon-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 9px !important;
+  background: rgba(239, 68, 68, 0.18) !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  color: #f87171 !important;
+  font-size: 0.92rem !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+  padding: 0 !important;
 }
 
-.submit-batch-btn.small-btn:hover {
-    background: #3d5d8a;
-    transform: translateY(-2px);
+.delete-icon-btn:hover {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+  border-color: #ef4444 !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
+  transform: translateY(-1px) !important;
 }
 
-/* 7. Table Styling */
-.table-section {
-    border-radius: 15px;
-    overflow: hidden;
-    border: 1px solid #cbd5e0;
-    background: white;
+.edit-icon-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 9px !important;
+  background: rgba(37, 99, 235, 0.18) !important;
+  border: 1px solid rgba(96, 165, 250, 0.35) !important;
+  color: #60a5fa !important;
+  font-size: 0.92rem !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+  padding: 0 !important;
 }
 
-.student-table {
-    width: 100%;
-    border-collapse: collapse;
+.edit-icon-btn:hover {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45) !important;
+  transform: translateY(-1px) !important;
 }
 
-.student-table th {
-    background-color: #f1f5f9;
-    color: #3d5d8a;
-    font-weight: 700;
-    padding: 22px;
-    text-transform: uppercase;
-    font-size: 0.85rem;
-    letter-spacing: 1px;
-    border-bottom: 2px solid #cbd5e0;
+.admin-modern-table th {
+  padding: 12px 18px !important;
+  font-size: 0.8rem !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: #e2e8f0 !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.1) !important;
+  text-align: left;
 }
 
-.student-table td {
-    padding: 20px;
-    text-align: center;
-    color: #2d3748;
-    border-bottom: 1px solid #e2e8f0;
+.admin-modern-table td {
+  padding: 13px 18px;
+  font-size: 0.91rem;
+  color: #cbd5e1;
 }
 
-.student-table tr:hover {
-    background-color: #f8fafc;
+/* Compact Form Panel */
+.room-form-panel {
+  padding: 22px 28px !important;
+  margin-bottom: 22px;
 }
 
-.edit-btn {
-    color: #7ba6dc;
-    font-size: 1.3rem;
-    cursor: pointer;
-    transition: 0.2s;
+.room-form-panel .admin-panel-head {
+  margin-bottom: 14px;
 }
 
-.edit-btn:hover {
-    transform: scale(1.2);
-}
-/* Container for the icons in the table cell */
-.action-cell {
-    display: flex;
-    justify-content: center;
-    gap: 15px; /* Space between edit and delete icons */
-    align-items: center;
+.room-table-panel {
+  padding: 22px 28px !important;
 }
 
-/* Edit Icon Style */
-.edit-btn {
-    color: #4a90e2; /* Blue color */
-    cursor: pointer;
-    font-size: 18px;
-    transition: transform 0.2s;
+.room-table-panel .admin-panel-head {
+  margin-bottom: 16px;
 }
 
-/* Delete Icon Style */
-.delete-btn {
-    color: #e74c3c; /* Red color from your image */
-    cursor: pointer;
-    font-size: 18px;
-    transition: transform 0.2s;
+.columns-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
 }
 
-.edit-btn:hover, .delete-btn:hover {
-    transform: scale(1.2);
-}
-.block-management-section {
-    background: #f8fafc;
-    padding: 20px;
-    border-radius: 12px;
-    margin-bottom: 25px;
-    border: 1px dashed #cbd5e0;
-}
-
-.block-controls {
-    display: flex;
-    gap: 15px;
-    align-items: center;
+.column-selector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.block-input {
-    max-width: 300px;
+.room-table-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  border-radius: 12px;
 }
 
-.icon-btn {
-    width: 45px;
-    height: 45px;
-    border: none;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: white;
-    font-size: 1.1rem;
-    transition: 0.2s;
+.th-center {
+  text-align: center !important;
 }
 
-.add-btn { background-color: #48bb78; } /* Green for Add */
-.add-btn:hover { background-color: #38a169; }
+.td-center {
+  text-align: center !important;
+}
 
-.remove-btn { background-color: #f56565; } /* Red for Delete */
-.remove-btn:hover { background-color: #e53e3e; }
+.td-center > div,
+.td-center > span {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .columns-selector-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

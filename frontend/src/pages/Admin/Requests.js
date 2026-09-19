@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
-import { FaCheck, FaTimes } from "react-icons/fa";
+import { 
+  FaCheck, FaTimes, FaInbox, FaUserTie, 
+  FaCalendarAlt, FaClock, FaCommentAlt 
+} from "react-icons/fa";
 import "./Requests.css";
 
 const formatDate = (dateValue) => {
   if (!dateValue) return "-";
   return new Date(dateValue).toLocaleDateString("en-US", {
+    weekday: "short",
     month: "short",
     day: "numeric",
     year: "numeric"
@@ -27,7 +31,7 @@ const Requests = () => {
 
         const requestsResponse = await axios.get("http://localhost:5000/api/admin/requests");
 
-        const fetchedRequests = requestsResponse.data || [];
+        const fetchedRequests = Array.isArray(requestsResponse.data) ? requestsResponse.data : [];
         setRequests(fetchedRequests);
         setSelectedRequest(fetchedRequests[0] || null);
 
@@ -77,115 +81,185 @@ const Requests = () => {
   };
 
   return (
-    <div className="requests-layout">
+    <div className="admin-page-container">
       <AdminSidebar />
 
-      <main className="requests-page">
-        <div className="requests-header-card">
-          <h2>Teacher Requests</h2>
-          <p>Teachers who marked themselves unavailable are listed here.</p>
-        </div>
+      <main className="admin-main-viewport">
+        {/* Header */}
+        <header className="admin-header-glass">
+          <div className="admin-header-left">
+            <div className="admin-context-pill">
+              <FaInbox /> FACULTY EXEMPTIONS
+            </div>
+            <h1>Faculty Duty Exemption Requests</h1>
+            <p className="admin-header-sub">
+              Review and approve or decline faculty unavailability submissions prior to duty allocation.
+            </p>
+          </div>
 
-        <div className="requests-content">
-          <section className="requests-list-card">
-            <div className="requests-card-header">
-              <h3>Received Requests</h3>
-              <span>{requests.length} total</span>
+          <div className="teacher-header-stats">
+            <div className="stat-pill-item unavailable">
+              <span className="stat-num">{requests.length}</span>
+              <span className="stat-label">Pending Requests</span>
+            </div>
+          </div>
+        </header>
+
+        {/* 2-Column Split: Requests List + Detailed Review Pane */}
+        <div className="requests-split-grid">
+          {/* List of Requests */}
+          <section className="admin-glass-panel">
+            <div className="admin-panel-head">
+              <div className="panel-title-group">
+                <h2>Pending Submissions</h2>
+                <p>{requests.length} faculty requests awaiting administrative decision</p>
+              </div>
             </div>
 
             {loading ? (
-              <div className="requests-empty">Loading requests...</div>
+              <div className="requests-state-box">
+                <div className="admin-table-spinner"></div>
+                <p>Loading exemption requests...</p>
+              </div>
             ) : errorMessage ? (
-              <div className="requests-empty requests-error">
+              <div className="requests-state-box error">
                 <p>{errorMessage}</p>
-                <button
-                  type="button"
-                  className="requests-retry-btn"
-                  onClick={() => window.location.reload()}
-                >
+                <button type="button" className="admin-refresh-btn" onClick={() => window.location.reload()}>
                   Retry
                 </button>
               </div>
             ) : requests.length === 0 ? (
-              <div className="requests-empty">No unavailability requests found.</div>
+              <div className="requests-state-box">
+                <FaCheck className="done-icon" />
+                <h3>All Requests Reviewed</h3>
+                <p>No pending faculty unavailability submissions found.</p>
+              </div>
             ) : (
-              <div className="request-name-list">
-                {requests.map((request) => (
-                  <div
-                    key={request.unavailability_id}
-                    className={`request-list-item ${selectedRequest?.unavailability_id === request.unavailability_id ? "selected" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      className="request-name-trigger"
+              <div className="requests-cards-stack">
+                {requests.map((request) => {
+                  const isSelected = selectedRequest?.unavailability_id === request.unavailability_id;
+                  const isBusy = processingId === request.unavailability_id;
+
+                  return (
+                    <div
+                      key={request.unavailability_id}
+                      className={`request-card-tile ${isSelected ? "active" : ""}`}
                       onClick={() => setSelectedRequest(request)}
                     >
-                      <span className="request-list-name">{request.teacher_name || request.Tusername}</span>
-                    </button>
-                    <div className="request-action-group">
-                      <button
-                        type="button"
-                        className="request-action-btn accept"
-                        onClick={() => handleDecision(request, "accept")}
-                        disabled={processingId === request.unavailability_id}
-                        title="Accept request"
-                      >
-                        <FaCheck />
-                      </button>
-                      <button
-                        type="button"
-                        className="request-action-btn reject"
-                        onClick={() => handleDecision(request, "reject")}
-                        disabled={processingId === request.unavailability_id}
-                        title="Reject request"
-                      >
-                        <FaTimes />
-                      </button>
+                      <div className="tile-top-line">
+                        <div className="tile-faculty-info">
+                          <FaUserTie className="tile-icon" />
+                          <div>
+                            <strong>{request.teacher_name || request.Tusername}</strong>
+                            <span className="tile-email">{request.Tusername}</span>
+                          </div>
+                        </div>
+
+                        <div className="tile-action-btns" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="tile-action-btn accept"
+                            onClick={() => handleDecision(request, "accept")}
+                            disabled={isBusy}
+                            title="Approve exemption (sets teacher to Unavailable)"
+                          >
+                            <FaCheck />
+                          </button>
+                          <button
+                            type="button"
+                            className="tile-action-btn reject"
+                            onClick={() => handleDecision(request, "reject")}
+                            disabled={isBusy}
+                            title="Decline exemption"
+                          >
+                            <FaTimes />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="tile-meta-line">
+                        <span className="tile-chip">
+                          <FaCalendarAlt /> {formatDate(request.exam_date)}
+                        </span>
+                        <span className="tile-chip session">
+                          <FaClock /> Session: {request.session}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
 
-          <aside className="request-detail-card">
-            <div className="requests-card-header">
-              <h3>Request Details</h3>
+          {/* Details Pane */}
+          <aside className="admin-glass-panel">
+            <div className="admin-panel-head">
+              <div className="panel-title-group">
+                <h2>Submission Review</h2>
+                <p>Full faculty justification and slot details</p>
+              </div>
             </div>
 
             {selectedRequest ? (
-              <div className="request-detail-grid">
-                <div className="request-detail-item">
-                  <span>unavailability_id</span>
-                  <strong>{selectedRequest.unavailability_id}</strong>
+              <div className="request-full-details-view">
+                <div className="review-avatar-banner">
+                  <div className="review-avatar-circle">
+                    {(selectedRequest.teacher_name || "T").charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="review-name">{selectedRequest.teacher_name || "Faculty Member"}</h3>
+                    <span className="review-email">{selectedRequest.Tusername}</span>
+                  </div>
                 </div>
-                <div className="request-detail-item">
-                  <span>Tusername</span>
-                  <strong>{selectedRequest.Tusername}</strong>
+
+                <div className="review-fields-grid">
+                  <div className="review-field-card">
+                    <span className="field-card-label">EXAM DATE</span>
+                    <strong className="field-card-value">
+                      <FaCalendarAlt className="field-icon blue" /> {formatDate(selectedRequest.exam_date)}
+                    </strong>
+                  </div>
+
+                  <div className="review-field-card">
+                    <span className="field-card-label">SESSION</span>
+                    <strong className="field-card-value">
+                      <FaClock className="field-icon blue" /> {selectedRequest.session}
+                    </strong>
+                  </div>
+
+                  <div className="review-field-card full-w">
+                    <span className="field-card-label">JUSTIFICATION & REASON</span>
+                    <div className="review-reason-quote">
+                      <FaCommentAlt className="quote-icon" />
+                      <p>{selectedRequest.reason}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="request-detail-item">
-                  <span>Teacher Name</span>
-                  <strong>{selectedRequest.teacher_name || "-"}</strong>
-                </div>
-                <div className="request-detail-item">
-                  <span>availability</span>
-                  <strong>{selectedRequest.availability || "-"}</strong>
-                </div>
-                <div className="request-detail-item">
-                  <span>exam_date</span>
-                  <strong>{formatDate(selectedRequest.exam_date)}</strong>
-                </div>
-                <div className="request-detail-item">
-                  <span>session</span>
-                  <strong>{selectedRequest.session}</strong>
-                </div>
-                <div className="request-detail-item request-detail-reason">
-                  <span>reason</span>
-                  <strong>{selectedRequest.reason}</strong>
+
+                <div className="review-action-footer">
+                  <button
+                    type="button"
+                    className="admin-quick-btn secondary full-w"
+                    onClick={() => handleDecision(selectedRequest, "reject")}
+                    disabled={processingId === selectedRequest.unavailability_id}
+                  >
+                    <FaTimes /> Decline Request
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-quick-btn primary full-w"
+                    onClick={() => handleDecision(selectedRequest, "accept")}
+                    disabled={processingId === selectedRequest.unavailability_id}
+                  >
+                    <FaCheck /> Approve Exemption
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="requests-empty">Select a teacher name to view request details.</div>
+              <div className="requests-state-box">
+                <p>Select a request from the list to inspect details.</p>
+              </div>
             )}
           </aside>
         </div>
