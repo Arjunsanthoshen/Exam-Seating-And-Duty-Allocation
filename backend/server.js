@@ -1293,10 +1293,13 @@ app.get('/api/allocation/init', requireAuth, requireRole('admin'), async (req, r
 
 // POST: Generate Allocation
 app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (req, res) => {
+    console.log(`[PDF TIMING] ===== Seating Allocation request started at ${new Date().toISOString()} =====`);
+    console.time("[PDF TIMING] total request time - Seating Allocation");
     const { examDate, session, selectedYears, selectedRooms } = req.body;
     const formattedDate = safeFormatDate(examDate);
 
     if (!formattedDate || !session || !selectedYears?.length || !selectedRooms?.length) {
+        console.timeEnd("[PDF TIMING] total request time - Seating Allocation");
         return res.status(400).json({ message: "Missing required fields." });
     }
 
@@ -1305,6 +1308,7 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
     try {
         await connection.beginTransaction();
 
+        console.time("[PDF TIMING] database queries - fetch exam slots, rooms, and students");
         // 1️⃣ Fetch Exam(s) for this specific slot
         const [examRows] = await connection.query(
             `SELECT * FROM Exam_schedule
@@ -1313,6 +1317,8 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         );
 
         if (!examRows.length) {
+            console.timeEnd("[PDF TIMING] database queries - fetch exam slots, rooms, and students");
+            console.timeEnd("[PDF TIMING] total request time - Seating Allocation");
             await connection.rollback();
             return res.status(400).json({ message: "No scheduled exams found for this date and session." });
         }
@@ -1340,6 +1346,8 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         );
 
         if (!rooms.length) {
+            console.timeEnd("[PDF TIMING] database queries - fetch exam slots, rooms, and students");
+            console.timeEnd("[PDF TIMING] total request time - Seating Allocation");
             await connection.rollback();
             return res.status(400).json({ message: "Rooms not found." });
         }
@@ -1385,6 +1393,8 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
             );
 
             if (!manageRows.length) {
+                console.timeEnd("[PDF TIMING] database queries - fetch exam slots, rooms, and students");
+                console.timeEnd("[PDF TIMING] total request time - Seating Allocation");
                 await connection.rollback();
                 return res.status(400).json({ message: "No students found." });
             }
@@ -1404,10 +1414,12 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                 }
             });
         }
+        console.timeEnd("[PDF TIMING] database queries - fetch exam slots, rooms, and students");
 
         const yearList = Object.keys(yearQueues).sort();
         let globalYearPointer = 0;
 
+        console.time("[PDF TIMING] allocation & database row insertions");
         // =========================
         // STRICT GLOBAL ALLOCATION
         // =========================
@@ -1437,8 +1449,10 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                     attempts++;
                 }
 
-                if (!assignedYear) break;
+                // If no year has students left, continue to fill possible right seats
+                if (!assignedYear) continue;
 
+                // Fill column
                 for (let bench = 1; bench <= benchesInColumn; bench++) {
 
                     // LEFT
@@ -1530,10 +1544,17 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                  selected_rooms = VALUES(selected_rooms)`,
             [formattedDate, session, JSON.stringify(selectedYears), JSON.stringify(selectedRooms)]
         );
+        console.timeEnd("[PDF TIMING] allocation & database row insertions");
 
+        console.time("[PDF TIMING] total time - Hall-wise PDF");
         const hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate);
-        const totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate);
+        console.timeEnd("[PDF TIMING] total time - Hall-wise PDF");
 
+        console.time("[PDF TIMING] total time - Total Seating PDF");
+        const totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate);
+        console.timeEnd("[PDF TIMING] total time - Total Seating PDF");
+
+        console.time("[PDF TIMING] database queries - save report records & commit");
         const nextHallWiseReportNumber = await getNextHallWiseReportNumber(connection);
         const hallWiseReportName = `hall-wise-report${nextHallWiseReportNumber}`;
         const hallWiseFileName = `${hallWiseReportName}.pdf`;
@@ -1564,6 +1585,10 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         );
 
         await connection.commit();
+        console.timeEnd("[PDF TIMING] database queries - save report records & commit");
+
+        console.timeEnd("[PDF TIMING] total request time - Seating Allocation");
+        console.log(`[PDF TIMING] ===== Seating Allocation request completed successfully =====`);
 
         res.json({
             message: "Allocation generated successfully",
@@ -1572,6 +1597,7 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         });
 
     } catch (error) {
+        try { console.timeEnd("[PDF TIMING] total request time - Seating Allocation"); } catch (e) {}
         await connection.rollback();
         console.error("Allocation generation error:", error);
         res.status(500).json({
@@ -2232,7 +2258,9 @@ function resolveChromeExecutable() {
     return null;
 }
 
-async function renderPdfFromHtml(html) {
+async function renderPdfFromHtml(html, reportName = "PDF") {
+    console.log(`[PDF TIMING] [${reportName}] Starting renderPdfFromHtml (HTML size: ${html.length} chars)`);
+    console.time(`[PDF TIMING] [${reportName}] Puppeteer total renderPdfFromHtml`);
     const executablePath = resolveChromeExecutable();
 
     if (!executablePath) {
@@ -2265,14 +2293,20 @@ async function renderPdfFromHtml(html) {
         ]
     };
 
+    console.time(`[PDF TIMING] [${reportName}] Puppeteer browser launch`);
     const browser = await puppeteer.launch(launchOptions);
+    console.timeEnd(`[PDF TIMING] [${reportName}] Puppeteer browser launch`);
 
     try {
         const page = await browser.newPage();
         await page.setJavaScriptEnabled(false);
-        await page.setContent(html, { waitUntil: "networkidle0" });
 
-        return await page.pdf({
+        console.time(`[PDF TIMING] [${reportName}] page.setContent()`);
+        await page.setContent(html, { waitUntil: "networkidle0" });
+        console.timeEnd(`[PDF TIMING] [${reportName}] page.setContent()`);
+
+        console.time(`[PDF TIMING] [${reportName}] page.pdf()`);
+        const pdfBuffer = await page.pdf({
             format: "A4",
             landscape: true,
             printBackground: true,
@@ -2283,21 +2317,34 @@ async function renderPdfFromHtml(html) {
                 right: "20px"
             }
         });
+        console.timeEnd(`[PDF TIMING] [${reportName}] page.pdf()`);
+
+        return pdfBuffer;
     } finally {
+        console.time(`[PDF TIMING] [${reportName}] browser close`);
         await browser.close();
+        console.timeEnd(`[PDF TIMING] [${reportName}] browser close`);
+        console.timeEnd(`[PDF TIMING] [${reportName}] Puppeteer total renderPdfFromHtml`);
     }
 }
 
 async function generateHallSeatingPdfByExamId(connection, examId, examDate) {
+    console.time("[PDF TIMING] [Hall-wise] database queries / allocation retrieval");
     const rows = await buildHallSeatingRows(connection, examId);
 
     if (!rows.length) {
+        console.timeEnd("[PDF TIMING] [Hall-wise] database queries / allocation retrieval");
         throw new Error("No seating found");
     }
 
     const resolvedExamDate = await resolveHallSeatingExamDate(connection, examDate);
+    console.timeEnd("[PDF TIMING] [Hall-wise] database queries / allocation retrieval");
+
+    console.time("[PDF TIMING] [Hall-wise] HTML generation");
     const html = buildHallSeatingHtml(rows, resolvedExamDate);
-    return renderPdfFromHtml(html);
+    console.timeEnd("[PDF TIMING] [Hall-wise] HTML generation");
+
+    return renderPdfFromHtml(html, "Hall-wise");
 }
 
 async function buildTotalSeatingRows(connection, examId) {
@@ -2508,15 +2555,22 @@ function buildTotalSeatingHtml(rows, examDate) {
 }
 
 async function generateTotalSeatingPdfByExamId(connection, examId, examDate) {
+    console.time("[PDF TIMING] [Total Seating] database queries / allocation retrieval");
     const rows = await buildTotalSeatingRows(connection, examId);
 
     if (!rows.length) {
+        console.timeEnd("[PDF TIMING] [Total Seating] database queries / allocation retrieval");
         throw new Error("No seating found");
     }
 
     const resolvedExamDate = await resolveHallSeatingExamDate(connection, examDate);
+    console.timeEnd("[PDF TIMING] [Total Seating] database queries / allocation retrieval");
+
+    console.time("[PDF TIMING] [Total Seating] HTML generation");
     const html = buildTotalSeatingHtml(rows, resolvedExamDate);
-    return renderPdfFromHtml(html);
+    console.timeEnd("[PDF TIMING] [Total Seating] HTML generation");
+
+    return renderPdfFromHtml(html, "Total Seating");
 }
 
 async function buildInvigilationDutyRows(connection, examDate) {
@@ -2629,18 +2683,24 @@ function buildInvigilationDutyHtml(rows, examDate, selectedYearsLabel) {
 }
 
 async function generateInvigilationDutyPdfByExamDate(connection, examDate) {
+    console.time("[PDF TIMING] [Invigilation Duty] database queries / allocation retrieval");
     const rows = await buildInvigilationDutyRows(connection, examDate);
 
     if (!rows.length) {
+        console.timeEnd("[PDF TIMING] [Invigilation Duty] database queries / allocation retrieval");
         throw new Error("No duty allocation found");
     }
 
     const reportMeta = await getAllocationHistoryReportMeta(connection, examDate);
     const resolvedExamDate = reportMeta.exam_date || examDate;
     const selectedYearsLabel = formatSelectedYearsForReport(reportMeta.selected_years);
-    const html = buildInvigilationDutyHtml(rows, resolvedExamDate, selectedYearsLabel);
+    console.timeEnd("[PDF TIMING] [Invigilation Duty] database queries / allocation retrieval");
 
-    return renderPdfFromHtml(html);
+    console.time("[PDF TIMING] [Invigilation Duty] HTML generation");
+    const html = buildInvigilationDutyHtml(rows, resolvedExamDate, selectedYearsLabel);
+    console.timeEnd("[PDF TIMING] [Invigilation Duty] HTML generation");
+
+    return renderPdfFromHtml(html, "Invigilation Duty");
 }
 
 async function getNextHallWiseReportNumber(connection) {
@@ -2731,18 +2791,22 @@ app.get("/api/reports", requireAuth, requireRole('admin'), async (req, res) => {
 });
 
 app.get("/api/reports/:reportId/download", requireAuth, requireRole('admin'), async (req, res) => {
+    console.log(`[PDF TIMING] ===== Report Download (ID: ${req.params.reportId}) started at ${new Date().toISOString()} =====`);
+    console.time("[PDF TIMING] total request time - Report Download");
     try {
         const [rows] = await db.promise().query(
-            `SELECT report_name, filepath FROM Reports WHERE report_id = ?`,
+            `SELECT report_name, filepath, report_type, exam_date FROM Reports WHERE report_id = ?`,
             [req.params.reportId]
         );
 
         if (!rows.length) {
+            console.timeEnd("[PDF TIMING] total request time - Report Download");
             return res.status(404).json({ message: "Report not found" });
         }
 
         const report = rows[0];
         if (!report.filepath) {
+            console.timeEnd("[PDF TIMING] total request time - Report Download");
             return res.status(404).json({ message: "Report file not found" });
         }
 
@@ -2750,6 +2814,8 @@ app.get("/api/reports/:reportId/download", requireAuth, requireRole('admin'), as
         const resolvedPath = path.join(generatedReportsDir, baseFileName);
 
         if (!fs.existsSync(resolvedPath)) {
+            console.log(`[PDF TIMING] File missing from disk, triggering on-the-fly regeneration for: ${baseFileName}`);
+            console.time("[PDF TIMING] dynamic on-the-fly PDF regeneration");
             // Ephemeral file recovery: dynamically regenerate if missing from disk
             const connection = await db.promise().getConnection();
             try {
@@ -2777,15 +2843,19 @@ app.get("/api/reports/:reportId/download", requireAuth, requireRole('admin'), as
                 console.error("Dynamic report regeneration error:", regenErr);
             } finally {
                 connection.release();
+                console.timeEnd("[PDF TIMING] dynamic on-the-fly PDF regeneration");
             }
         }
 
         if (!fs.existsSync(resolvedPath)) {
+            console.timeEnd("[PDF TIMING] total request time - Report Download");
             return res.status(404).json({ message: "Report file not found and could not be regenerated" });
         }
 
+        console.timeEnd("[PDF TIMING] total request time - Report Download");
         return res.download(resolvedPath, `${report.report_name}.pdf`);
     } catch (error) {
+        try { console.timeEnd("[PDF TIMING] total request time - Report Download"); } catch (e) {}
         console.error("Download Report Error:", error);
         res.status(500).json({ message: "Failed to download report" });
     }
@@ -2851,6 +2921,8 @@ app.delete("/api/reports/:id", requireAuth, requireRole('admin'), async (req, re
 });
 
 app.get("/api/reports/hall-seating/:date", requireAuth, requireRole('admin'), async (req, res) => {
+    console.log(`[PDF TIMING] ===== Hall Seating by Date (${req.params.date}) started at ${new Date().toISOString()} =====`);
+    console.time("[PDF TIMING] total request time - Hall Seating by Date");
     const examDate = req.params.date;
 
     try {
@@ -2860,6 +2932,7 @@ app.get("/api/reports/hall-seating/:date", requireAuth, requireRole('admin'), as
         );
 
         if (!examRows.length) {
+            console.timeEnd("[PDF TIMING] total request time - Hall Seating by Date");
             return res.status(404).json({ message: "No exam found" });
         }
 
@@ -2870,8 +2943,10 @@ app.get("/api/reports/hall-seating/:date", requireAuth, requireRole('admin'), as
             "Content-Disposition": `attachment; filename=hall_seating_${examDate}.pdf`
         });
 
+        console.timeEnd("[PDF TIMING] total request time - Hall Seating by Date");
         res.send(pdf);
     } catch (error) {
+        try { console.timeEnd("[PDF TIMING] total request time - Hall Seating by Date"); } catch (e) {}
         console.error("Generate Hall Seating Report Error:", error);
         res.status(500).json({ message: error.message || "Failed to generate report" });
     }
@@ -3315,9 +3390,12 @@ app.get('/api/duties/summary', requireAuth, requireRole('admin'), async (req, re
 
 // 2. POST: Generate Duties with Fair Workload Balancing
 app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, res) => {
+    console.log(`[PDF TIMING] ===== Duty Allocation request started at ${new Date().toISOString()} =====`);
+    console.time("[PDF TIMING] total request time - Duty Allocation");
     const { date, session } = req.body;
     const formattedDate = safeFormatDate(date);
     if (!formattedDate || !session) {
+        console.timeEnd("[PDF TIMING] total request time - Duty Allocation");
         return res.status(400).json({ message: "Valid date and session are required." });
     }
     const slotKey = getDutySlotKey(formattedDate, session);
@@ -3326,6 +3404,7 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
     try {
         await connection.beginTransaction();
 
+        console.time("[PDF TIMING] Duty Allocation - database queries & teacher assignment");
         // A. Verify Exam Schedule exists
         const [exams] = await connection.query(
             `SELECT exam_id FROM Exam_schedule WHERE exam_date = ? AND session = ? LIMIT 1`, 
@@ -3425,8 +3504,13 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
             `UPDATE Teacher SET duty_count = duty_count - 1 WHERE username IN (?)`,
             [assignedUsernames]
         );
+        console.timeEnd("[PDF TIMING] Duty Allocation - database queries & teacher assignment");
 
+        console.time("[PDF TIMING] Duty Allocation - total time - Invigilation Duty PDF");
         const invigilationDutyPdfBuffer = await generateInvigilationDutyPdfByExamDate(connection, formattedDate);
+        console.timeEnd("[PDF TIMING] Duty Allocation - total time - Invigilation Duty PDF");
+
+        console.time("[PDF TIMING] Duty Allocation - database queries - save report & commit");
         const nextInvigilationDutyReportNumber = await getNextInvigilationDutyReportNumber(connection);
         const invigilationDutyReportName = `invigilation-duty-report${nextInvigilationDutyReportNumber}`;
         const invigilationDutyFilePath = path.join(
@@ -3453,6 +3537,11 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
         );
 
         await connection.commit();
+        console.timeEnd("[PDF TIMING] Duty Allocation - database queries - save report & commit");
+
+        console.timeEnd("[PDF TIMING] total request time - Duty Allocation");
+        console.log(`[PDF TIMING] ===== Duty Allocation request completed successfully =====`);
+
         recentDutyAssignments.set(slotKey, assignedUsernames);
         res.json({
             message: "Duties generated successfully with workload balancing.",
@@ -3460,6 +3549,7 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
         });
 
     } catch (err) {
+        try { console.timeEnd("[PDF TIMING] total request time - Duty Allocation"); } catch (e) {}
         await connection.rollback();
         console.error("Generate duties error:", err);
         res.status(500).json({ message: err.message });
