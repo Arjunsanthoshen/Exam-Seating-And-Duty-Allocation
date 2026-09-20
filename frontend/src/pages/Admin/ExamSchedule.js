@@ -137,10 +137,22 @@ const ExamSchedule = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
+
     const handleDelete = async (id) => {
+        const schedule = savedSchedules.find(s => s.exam_id === id);
+        if (isDemoUser && (!schedule || !schedule.is_demo)) {
+            alert("Demo users cannot delete this data.");
+            return;
+        }
+
         if (window.confirm("Delete this scheduled exam entry?")) {
-            await axios.delete(`${API_BASE_URL}/api/exam-schedule/${id}`);
-            fetchSchedules();
+            try {
+                await axios.delete(`${API_BASE_URL}/api/exam-schedule/${id}`);
+                fetchSchedules();
+            } catch (err) {
+                alert(err.response?.data?.message || "Failed to delete schedule");
+            }
         }
     };
 

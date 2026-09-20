@@ -28,6 +28,7 @@ const Allocation = () => {
 
     // Demo Cooldown State
     const [cooldownRemaining, setCooldownRemaining] = useState(0);
+    const [demoGeneratedSlots, setDemoGeneratedSlots] = useState(() => new Set());
     const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
 
     const getYYYYMMDD = (dateObj) => {
@@ -294,6 +295,7 @@ const Allocation = () => {
             setIsGenerated(true);
             if (isDemoUser) {
                 setCooldownRemaining(300);
+                setDemoGeneratedSlots(prev => new Set([...prev, `${examDate}_${session}`]));
             }
             const reportMessage = response.data.reportName
                 ? ` Report saved as ${response.data.reportName}.`
@@ -325,6 +327,12 @@ const Allocation = () => {
             alert("Please select an exam date to delete seating allocation.");
             return;
         }
+
+        if (isDemoUser && !demoGeneratedSlots.has(`${examDate}_${session}`)) {
+            alert("Demo users cannot delete this data.");
+            return;
+        }
+
         if (!window.confirm(`Are you sure you want to delete seating allocation for ${examDate} (${session})?`)) {
             return;
         }

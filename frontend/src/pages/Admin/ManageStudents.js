@@ -73,13 +73,21 @@ const ManageStudents = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
+
   const handleDelete = async (y, b, bt) => {
+    const student = studentList.find(s => s.year_of_join === y && s.branch === b && s.batch === bt);
+    if (isDemoUser && (!student || !student.is_demo)) {
+      alert("Demo users cannot delete this data.");
+      return;
+    }
+
     if (window.confirm(`Delete ${b} Batch ${bt} (Join Year ${y}) record?`)) {
       try {
         await axios.delete(`${API_BASE_URL}/api/students/${y}/${b}/${bt}`);
         fetchStudents();
       } catch (err) {
-        alert("Delete failed");
+        alert(err.response?.data?.message || "Delete failed");
       }
     }
   };

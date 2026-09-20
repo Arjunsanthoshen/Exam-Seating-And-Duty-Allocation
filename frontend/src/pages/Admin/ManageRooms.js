@@ -65,8 +65,16 @@ const ManageRooms = () => {
         }
     };
 
+    const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
+
     const handleDeleteBlock = async () => {
         if (!newBlockName.trim()) return alert("Enter block name to delete");
+        const blockObj = blocks.find(b => (b.block_name || "").toUpperCase() === newBlockName.trim().toUpperCase());
+        if (isDemoUser && (!blockObj || !blockObj.is_demo)) {
+            alert("Demo users cannot delete this data.");
+            return;
+        }
+
         if (window.confirm(`Delete block ${newBlockName.toUpperCase()}?`)) {
             try {
                 await axios.delete(`${API_BASE_URL}/api/blocks/${newBlockName.toUpperCase()}`);
@@ -74,7 +82,7 @@ const ManageRooms = () => {
                 fetchBlocks();
                 alert("Block removed successfully!");
             } catch (err) {
-                alert("Error deleting block. Ensure it has no assigned rooms.");
+                alert(err.response?.data?.message || "Error deleting block. Ensure it has no assigned rooms.");
             }
         }
     };
@@ -136,6 +144,12 @@ const ManageRooms = () => {
     };
 
     const handleDelete = async (block, room_no) => {
+        const roomObj = rooms.find(r => r.block === block && String(r.room_no) === String(room_no));
+        if (isDemoUser && (!roomObj || !roomObj.is_demo)) {
+            alert("Demo users cannot delete this data.");
+            return;
+        }
+
         if (window.confirm(`Are you sure you want to delete room ${room_no} in block ${block}?`)) {
             try {
                 await axios.delete(`${API_BASE_URL}/api/rooms/${block}/${room_no}`);
@@ -143,7 +157,7 @@ const ManageRooms = () => {
                 fetchRooms(); 
             } catch (err) {
                 console.error("Delete Error:", err);
-                alert("Failed to delete room");
+                alert(err.response?.data?.message || "Failed to delete room");
             }
         }
     };

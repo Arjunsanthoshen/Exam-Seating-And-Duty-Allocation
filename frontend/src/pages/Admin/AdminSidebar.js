@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
   FaCheckCircle, FaUser, FaUsers, 
@@ -71,36 +72,24 @@ const AdminSidebar = () => {
   const isDemoUser = localStorage.getItem("isDemo") === "true" || username.toLowerCase() === "demo";
 
   // Cleanup Modal States (Real Admin Only)
-  const [cleanupStep, setCleanupStep] = useState(0); // 0: closed, 1: code entry, 2: confirmation warning
-  const [confirmCode, setConfirmCode] = useState("");
+  const [showCleanupModal, setShowCleanupModal] = useState(false);
   const [cleanupError, setCleanupError] = useState("");
   const [isPurging, setIsPurging] = useState(false);
   const [cleanupSuccessMsg, setCleanupSuccessMsg] = useState("");
 
   const handleOpenCleanup = () => {
     if (isDemoUser) return;
-    setCleanupStep(1);
-    setConfirmCode("");
-    setCleanupError("");
-    setCleanupSuccessMsg("");
-  };
-
-  const handleCloseCleanup = () => {
-    setCleanupStep(0);
-    setConfirmCode("");
+    setShowCleanupModal(true);
     setCleanupError("");
     setCleanupSuccessMsg("");
     setIsPurging(false);
   };
 
-  const handleVerifyCode = (e) => {
-    e.preventDefault();
-    if (confirmCode === "+") {
-      setCleanupError("");
-      setCleanupStep(2);
-    } else {
-      setCleanupError("Invalid confirmation character. Access denied.");
-    }
+  const handleCloseCleanup = () => {
+    setShowCleanupModal(false);
+    setCleanupError("");
+    setCleanupSuccessMsg("");
+    setIsPurging(false);
   };
 
   const handleExecutePurge = async () => {
@@ -190,8 +179,8 @@ const AdminSidebar = () => {
         </div>
       </nav>
 
-      {/* Real Admin Demo Cleanup 2-Step Modal */}
-      {cleanupStep > 0 && !isDemoUser && (
+      {/* Real Admin Demo Cleanup Centered Modal */}
+      {showCleanupModal && !isDemoUser && createPortal(
         <div className="admin-cleanup-modal-overlay" onClick={handleCloseCleanup}>
           <div className="admin-cleanup-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="admin-cleanup-modal-head">
@@ -204,7 +193,13 @@ const AdminSidebar = () => {
                   <p>Real Administrator Purge Control</p>
                 </div>
               </div>
-              <button type="button" className="admin-cleanup-close" onClick={handleCloseCleanup}>
+              <button 
+                type="button" 
+                className="admin-cleanup-close" 
+                onClick={handleCloseCleanup}
+                disabled={isPurging}
+                title="Close"
+              >
                 ✕
               </button>
             </div>
@@ -214,52 +209,18 @@ const AdminSidebar = () => {
                 <FaCheckCircle />
                 <span>{cleanupSuccessMsg}</span>
               </div>
-            ) : cleanupStep === 1 ? (
-              <form onSubmit={handleVerifyCode} className="admin-cleanup-step-body">
-                <p className="admin-cleanup-instruction">
-                  Enter authorization character to unlock demo maintenance operations:
-                </p>
-                <div className="admin-cleanup-input-wrap">
-                  <input
-                    type="text"
-                    className="admin-cleanup-input"
-                    maxLength={1}
-                    value={confirmCode}
-                    onChange={(e) => {
-                      setConfirmCode(e.target.value);
-                      setCleanupError("");
-                    }}
-                    placeholder="•"
-                    autoFocus
-                    required
-                  />
-                </div>
-                {cleanupError && (
-                  <div className="admin-cleanup-error-alert">
-                    {cleanupError}
-                  </div>
-                )}
-                <div className="admin-cleanup-btn-row">
-                  <button type="button" className="admin-cleanup-btn-cancel" onClick={handleCloseCleanup}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="admin-cleanup-btn-next">
-                    Verify Character
-                  </button>
-                </div>
-              </form>
             ) : (
               <div className="admin-cleanup-step-body">
                 <div className="admin-cleanup-warning-box">
                   <strong>Permanent Action Warning</strong>
                   <p>
-                    Are you sure you want to permanently purge all demo-created data?
+                    Are you sure you want to proceed? <strong>All demo-created data will be permanently deleted.</strong>
                   </p>
                   <ul>
                     <li>All demo seating allocations and history will be cleared.</li>
                     <li>All demo duty allocations and demo PDF reports will be erased.</li>
                     <li>Demo teacher requests and demo exam slots will be deleted.</li>
-                    <li>Real examination records and demo login accounts will remain safe.</li>
+                    <li>Real examination records and permanent demo accounts will remain safe.</li>
                   </ul>
                 </div>
 
@@ -284,13 +245,14 @@ const AdminSidebar = () => {
                     onClick={handleExecutePurge}
                     disabled={isPurging}
                   >
-                    {isPurging ? "Purging Demo Data..." : "Permanently Purge Demo Data"}
+                    {isPurging ? "Purging Demo Data..." : "OK"}
                   </button>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </aside>
   );

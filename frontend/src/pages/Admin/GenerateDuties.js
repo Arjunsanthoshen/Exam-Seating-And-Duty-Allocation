@@ -23,6 +23,7 @@ const GenerateDuties = () => {
 
   // Demo Cooldown State
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [demoGeneratedDutySlots, setDemoGeneratedDutySlots] = useState(() => new Set());
   const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
 
   const getYYYYMMDD = (dateObj) => {
@@ -101,6 +102,10 @@ const GenerateDuties = () => {
 
   const handleAction = async (type) => {
     if (type === 'delete') {
+      if (isDemoUser && !demoGeneratedDutySlots.has(`${examDate}_${session}`)) {
+        alert("Demo users cannot delete this data.");
+        return;
+      }
       if (!window.confirm("Delete this allocation? Faculty duty points will be restored.")) return;
       try {
         setActionType('delete');
@@ -164,6 +169,7 @@ const GenerateDuties = () => {
       setProcessTitle("Done! Duties Allocated");
       if (isDemoUser) {
         setCooldownRemaining(300);
+        setDemoGeneratedDutySlots(prev => new Set([...prev, `${examDate}_${session}`]));
       }
       const reportMessage = response.data?.reportName
         ? ` Report saved as ${response.data.reportName}.`

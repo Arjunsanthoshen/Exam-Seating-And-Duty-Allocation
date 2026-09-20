@@ -53,9 +53,19 @@ const TeacherDashboard = () => {
   const [duties, setDuties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [unavailabilityCountdown, setUnavailabilityCountdown] = useState(0);
+  const [hasSubmittedUnavailability, setHasSubmittedUnavailability] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState({ type: "", text: "" });
+
+  useEffect(() => {
+    if (unavailabilityCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setUnavailabilityCountdown((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [unavailabilityCountdown]);
 
   const [formData, setFormData] = useState(() => ({
     examDate: getLocalDateValue(),
@@ -250,6 +260,8 @@ const TeacherDashboard = () => {
         session: "FN",
         reason: ""
       });
+      setHasSubmittedUnavailability(true);
+      setUnavailabilityCountdown(5);
       fetchExemptionRequests();
     }).catch((error) => {
       const message = error.response?.data?.message || "Failed to submit unavailability request.";
@@ -549,12 +561,25 @@ const TeacherDashboard = () => {
                 </div>
 
                 <div className="teacher-form-actions">
+                  {unavailabilityCountdown > 0 && (
+                    <div className="teacher-unavailability-countdown-badge">
+                      <FaClock className="countdown-icon" />
+                      <span>Cooldown active: {unavailabilityCountdown}s</span>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     className="teacher-action-btn primary large"
-                    disabled={submittingRequest || isReasonTooLong || !formData.reason.trim()}
+                    disabled={submittingRequest || isReasonTooLong || !formData.reason.trim() || unavailabilityCountdown > 0}
                   >
-                    {submittingRequest ? "Submitting Request..." : "Submit Unavailability Request"}
+                    {submittingRequest
+                      ? "Submitting Request..."
+                      : unavailabilityCountdown > 0
+                      ? `Resend Request (${unavailabilityCountdown}s)`
+                      : hasSubmittedUnavailability
+                      ? "Resend Unavailability Request"
+                      : "Submit Unavailability Request"}
                   </button>
                 </div>
               </form>

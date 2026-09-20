@@ -69,7 +69,15 @@ const ManageTeachers = () => {
     }
   };
 
+  const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
+
   const handleDelete = async (username) => {
+    const teacher = teachers.find(t => t.username === username);
+    if (isDemoUser && (!teacher || !teacher.is_demo || username.toLowerCase() === "demo")) {
+      alert("Demo users cannot delete this data.");
+      return;
+    }
+
     if (!window.confirm(`Delete faculty member ${username}?`)) return;
     try {
       const res = await axios.delete(`${API_BASE_URL}/api/teachers/${username}`);

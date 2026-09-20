@@ -80,8 +80,21 @@ function Reports() {
         }
     };
 
+    const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
+
     const handleDeleteSelected = async () => {
         if (!selectedReportIds.length) return;
+        if (isDemoUser) {
+            const hasProhibited = selectedReportIds.some(id => {
+                const r = reports.find(item => item.report_id === id);
+                return !r || !r.is_demo;
+            });
+            if (hasProhibited) {
+                alert("Demo users cannot delete this data.");
+                return;
+            }
+        }
+
         if (!window.confirm(`Are you sure you want to permanently delete ${selectedReportIds.length} selected report(s)?`)) {
             return;
         }
@@ -99,6 +112,12 @@ function Reports() {
     };
 
     const handleDeleteSingle = async (reportId) => {
+        const reportObj = reports.find(r => r.report_id === reportId);
+        if (isDemoUser && (!reportObj || !reportObj.is_demo)) {
+            alert("Demo users cannot delete this data.");
+            return;
+        }
+
         if (!window.confirm("Are you sure you want to permanently delete this report?")) {
             return;
         }
