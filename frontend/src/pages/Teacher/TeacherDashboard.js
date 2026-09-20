@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -69,6 +69,12 @@ const TeacherDashboard = () => {
     confirmPassword: ""
   });
 
+  // Duty Exemption Requests State
+  const [exemptionRequests, setExemptionRequests] = useState([]);
+  const [expandedReasons, setExpandedReasons] = useState({});
+
+  const isDemoTeacher = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
+
   const reasonWordCount = formData.reason.trim()
     ? formData.reason.trim().split(/\s+/).filter(Boolean).length
     : 0;
@@ -78,6 +84,23 @@ const TeacherDashboard = () => {
     () => (location.pathname === "/MarkUnavailability" ? "unavailability" : "schedule"),
     [location.pathname]
   );
+
+  const fetchExemptionRequests = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/teacher/unavailability`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setExemptionRequests(res.data || []);
+    } catch (err) {
+      console.error("Failed to load exemption requests", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchExemptionRequests();
+  }, [fetchExemptionRequests, activeSection]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -151,11 +174,23 @@ const TeacherDashboard = () => {
     setPasswordMsg({ type: "", text: "" });
   };
 
+  const toggleReasonExpand = (id) => {
+    setExpandedReasons(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
   const handlePasswordSubmit = (event) => {
     event.preventDefault();
     const token = localStorage.getItem("token");
     if (!token) {
       navigate("/login");
+      return;
+    }
+
+    if (isDemoTeacher) {
+      setPasswordMsg({ type: "error", text: "Demo teacher account password cannot be modified in public demo mode." });
       return;
     }
 
@@ -215,6 +250,7 @@ const TeacherDashboard = () => {
         session: "FN",
         reason: ""
       });
+      fetchExemptionRequests();
     }).catch((error) => {
       const message = error.response?.data?.message || "Failed to submit unavailability request.";
       window.alert(message);
@@ -522,6 +558,108 @@ const TeacherDashboard = () => {
                   </button>
                 </div>
               </form>
+            </section>
+
+            {/* Applied Duty Exemptions Table Card */}
+            <section className="teacher-glass-card teacher-exemptions-card">
+              <div className="teacher-card-head">
+                <div>
+                  <h2>Applied Duty Exemptions</h2>
+                  <p>Track the approval status of your submitted exam unavailability requests</p>
+                </div>
+                {exemptionRequests.length > 0 && (
+                  <span className="teacher-count-badge">
+                    {exemptionRequests.length} {exemptionRequests.length === 1 ? "Request" : "Requests"} Applied
+                  </span>
+                )}
+              </div>
+
+              <div className="teacher-table-responsive">
+                <table className="teacher-modern-table teacher-exemptions-table">
+                  <thead>
+                    <tr>
+                      <th className="th-center" style={{ width: "10%" }}>Sl. No.</th>
+                      <th className="th-center" style={{ width: "20%" }}>Request Date</th>
+                      <th className="th-center" style={{ width: "16%" }}>Session</th>
+                      <th style={{ width: "36%" }}>Reason for Unavailability</th>
+                      <th className="th-center" style={{ width: "18%" }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exemptionRequests.length > 0 ? (
+                      exemptionRequests.map((req, index) => {
+                        const isExpanded = Boolean(expandedReasons[req.unavailability_id]);
+                        const isLong = (req.reason || "").length > 55;
+                        const displayReason = isExpanded || !isLong 
+                          ? req.reason 
+                          : `${(req.reason || "").slice(0, 55)}...`;
+
+                        let statusClass = "pending";
+                        let statusIcon = <FaClock />;
+                        let statusText = "Pending Review";
+
+                        if (req.status === "Accepted") {
+                          statusClass = "accepted";
+                          statusIcon = <FaCheckCircle />;
+                          statusText = "Accepted";
+                        } else if (req.status === "Declined" || req.status === "Rejected") {
+                          statusClass = "declined";
+                          statusIcon = <FaTimes />;
+                          statusText = "Declined";
+                        }
+
+                        return (
+                          <tr key={req.unavailability_id || index}>
+                            <td className="td-center">
+                              <span className="teacher-sl-badge">{index + 1}</span>
+                            </td>
+                            <td className="td-center">
+                              <div className="teacher-date-cell">
+                                <FaCalendarAlt className="teacher-cell-icon" />
+                                <strong>{formatDisplayDate(req.exam_date)}</strong>
+                              </div>
+                            </td>
+                            <td className="td-center">
+                              <span className={`teacher-session-pill ${req.session}`}>
+                                {req.session}
+                              </span>
+                            </td>
+                            <td className="teacher-reason-cell">
+                              <span className="teacher-reason-text">{displayReason}</span>
+                              {isLong && (
+                                <button
+                                  type="button"
+                                  className="teacher-read-more-btn"
+                                  onClick={() => toggleReasonExpand(req.unavailability_id)}
+                                >
+                                  {isExpanded ? "Read Less" : "Read More"}
+                                </button>
+                              )}
+                            </td>
+                            <td className="td-center">
+                              <span className={`teacher-status-pill ${statusClass}`}>
+                                {statusIcon} {statusText}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="5">
+                          <div className="teacher-empty-state">
+                            <div className="teacher-empty-icon">
+                              <FaClipboardList />
+                            </div>
+                            <h3>No Exemption Requests</h3>
+                            <p>You haven't submitted any duty exemption requests yet.</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </section>
           </>
         )}

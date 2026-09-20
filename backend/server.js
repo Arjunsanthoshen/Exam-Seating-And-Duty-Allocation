@@ -44,6 +44,25 @@ if (!SECRET_KEY) {
 
 const BCRYPT_HASH_PREFIX = /^\$2[aby]\$\d{2}\$/;
 
+const DEMO_USERNAME = String(process.env.DEMO_USERNAME || "demo").trim().toLowerCase();
+const DEMO_PASSWORD = String(process.env.DEMO_PASSWORD || "demo");
+
+const demoCooldowns = {
+    seating: 0,
+    duty: 0
+};
+const DEMO_COOLDOWN_MS = 5 * 60 * 1000;
+
+const teacherUnavailabilityCooldowns = new Map();
+const TEACHER_COOLDOWN_MS = 5 * 1000;
+
+function isDemoRequest(req) {
+    return !!(req.user && (
+        req.user.isDemo ||
+        String(req.user.username || "").trim().toLowerCase() === DEMO_USERNAME
+    ));
+}
+
 const BRANCH_MAP = {
     "CS": "CSE",
     "CSE": "CSE",
@@ -331,6 +350,7 @@ function requireAuth(req, res, next) {
             return res.status(401).json({ message: "Invalid or expired session token." });
         }
         req.user = user;
+        req.user.isDemo = (String(user.username || "").trim().toLowerCase() === DEMO_USERNAME);
         next();
     });
 }
@@ -352,42 +372,32 @@ function requireRole(...allowedRoles) {
     };
 }
 
-
-async function ensureRequestTables() {
-    await db.promise().query(`
-        CREATE TABLE IF NOT EXISTS teacher_unavailability (
-            unavailability_id INT NOT NULL AUTO_INCREMENT,
-            Tusername VARCHAR(255) NOT NULL,
-            exam_date DATE NOT NULL,
-            session VARCHAR(20) NOT NULL,
-            reason TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (unavailability_id)
-        )
-    `);
-
-    await db.promise().query(`
-        ALTER TABLE teacher_unavailability
-        MODIFY unavailability_id INT NOT NULL AUTO_INCREMENT
-    `);
-
-    await db.promise().query(`
-        CREATE TABLE IF NOT EXISTS admin_request_state (
-            state_id INT NOT NULL,
-            last_seen_unavailability_id INT NOT NULL DEFAULT 0,
-            PRIMARY KEY (state_id)
-        )
-    `);
-
-    await db.promise().query(`
-        INSERT IGNORE INTO admin_request_state (state_id, last_seen_unavailability_id)
-        VALUES (1, 0)
-    `);
+const hasColumnCache = new Map();
+async function tableHasColumn(tableName, columnName) {
+    const key = `${tableName}.${columnName}`.toLowerCase();
+    if (hasColumnCache.has(key)) return hasColumnCache.get(key);
+    try {
+        const [rows] = await db.promise().query(`
+            SELECT 1 FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND LOWER(TABLE_NAME) = ?
+              AND LOWER(COLUMN_NAME) = ?
+            LIMIT 1
+        `, [tableName.toLowerCase(), columnName.toLowerCase()]);
+        const exists = rows.length > 0;
+        hasColumnCache.set(key, exists);
+        return exists;
+    } catch (e) {
+        return false;
+    }
 }
 
-ensureRequestTables().catch((error) => {
-    console.error("Failed to ensure request tables on startup:", error);
-});
+async function ensureRequestTables() {
+    // Explicit schema migrations are maintained separately in backend/database/migrations
+    // Zero automatic DDL is executed on server startup.
+    return;
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* STUDENT MANAGEMENT ROUTES                                                  */
@@ -414,6 +424,7 @@ app.get('/api/students', requireAuth, requireRole('admin'), (req, res) => {
 app.post('/api/students/add', requireAuth, requireRole('admin'), async (req, res) => {
     const { year, branch, batch, strength } = req.body;
     const numStrength = parseInt(strength, 10);
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
 
     if (!year || !branch || !batch || isNaN(numStrength) || numStrength <= 0) {
         return res.status(400).json({ message: "Invalid input values." });
@@ -423,13 +434,39 @@ app.post('/api/students/add', requireAuth, requireRole('admin'), async (req, res
     try {
         await connection.beginTransaction();
 
+        const hasManageDemo = await tableHasColumn('Student_manage', 'is_demo');
+        const hasUsersDemo = await tableHasColumn('Users', 'is_demo');
+        const hasStudentDemo = await tableHasColumn('Student', 'is_demo');
+
+        if (isDemoRequest(req)) {
+            const [existing] = await connection.query(
+                hasManageDemo
+                    ? `SELECT is_demo FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`
+                    : `SELECT 1 FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+                [year, branch, batch]
+            );
+            if (existing.length > 0 && (!hasManageDemo || !existing[0].is_demo)) {
+                await connection.rollback();
+                return res.status(403).json({ message: "Demo mode: Existing student records cannot be modified." });
+            }
+        }
+
         // 1. Insert into Student_manage
-        await connection.query(
-            `INSERT INTO Student_manage (year_of_join, branch, batch, end_serial) 
-             VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE end_serial = VALUES(end_serial)`,
-            [year, branch, batch, numStrength]
-        );
+        if (hasManageDemo) {
+            await connection.query(
+                `INSERT INTO Student_manage (year_of_join, branch, batch, end_serial, is_demo) 
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE end_serial = VALUES(end_serial), is_demo = VALUES(is_demo)`,
+                [year, branch, batch, numStrength, demoFlag]
+            );
+        } else {
+            await connection.query(
+                `INSERT INTO Student_manage (year_of_join, branch, batch, end_serial) 
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE end_serial = VALUES(end_serial)`,
+                [year, branch, batch, numStrength]
+            );
+        }
 
         // 2. Prepare Users and Student rows
         const defaultPasswordHash = await bcrypt.hash('student123', 10);
@@ -438,21 +475,36 @@ app.post('/api/students/add', requireAuth, requireRole('admin'), async (req, res
 
         for (let i = 1; i <= numStrength; i++) {
             const uname = formatStudentUsername(year, branch, batch, i, numStrength);
-            userRows.push([uname, 'student', defaultPasswordHash]);
-            studentRows.push([uname, branch, batch, i, year]);
+            if (hasUsersDemo) {
+                userRows.push([uname, 'student', defaultPasswordHash, demoFlag]);
+            } else {
+                userRows.push([uname, 'student', defaultPasswordHash]);
+            }
+
+            if (hasStudentDemo) {
+                studentRows.push([uname, branch, batch, i, year, demoFlag]);
+            } else {
+                studentRows.push([uname, branch, batch, i, year]);
+            }
         }
 
         // 3. Bulk insert into Users
         await connection.query(
-            `INSERT INTO Users (username, role, password) VALUES ?
-             ON DUPLICATE KEY UPDATE role = VALUES(role)`,
+            hasUsersDemo
+                ? `INSERT INTO Users (username, role, password, is_demo) VALUES ?
+                   ON DUPLICATE KEY UPDATE role = VALUES(role)`
+                : `INSERT INTO Users (username, role, password) VALUES ?
+                   ON DUPLICATE KEY UPDATE role = VALUES(role)`,
             [userRows]
         );
 
         // 4. Bulk insert into Student
         await connection.query(
-            `INSERT INTO Student (username, branch, batch, roll_no, year_of_join) VALUES ?
-             ON DUPLICATE KEY UPDATE branch = VALUES(branch), batch = VALUES(batch), roll_no = VALUES(roll_no), year_of_join = VALUES(year_of_join)`,
+            hasStudentDemo
+                ? `INSERT INTO Student (username, branch, batch, roll_no, year_of_join, is_demo) VALUES ?
+                   ON DUPLICATE KEY UPDATE branch = VALUES(branch), batch = VALUES(batch), roll_no = VALUES(roll_no), year_of_join = VALUES(year_of_join)`
+                : `INSERT INTO Student (username, branch, batch, roll_no, year_of_join) VALUES ?
+                   ON DUPLICATE KEY UPDATE branch = VALUES(branch), batch = VALUES(batch), roll_no = VALUES(roll_no), year_of_join = VALUES(year_of_join)`,
             [studentRows]
         );
 
@@ -471,6 +523,7 @@ app.post('/api/students/add', requireAuth, requireRole('admin'), async (req, res
 app.put('/api/students/update', requireAuth, requireRole('admin'), async (req, res) => {
     const { year, branch, batch, strength } = req.body;
     const numStrength = parseInt(strength, 10);
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
 
     if (!year || !branch || !batch || isNaN(numStrength) || numStrength <= 0) {
         return res.status(400).json({ message: "Invalid input values." });
@@ -480,11 +533,27 @@ app.put('/api/students/update', requireAuth, requireRole('admin'), async (req, r
     try {
         await connection.beginTransaction();
 
-        // 1. Get current strength
+        // 1. Get current strength and is_demo flag
+        const hasManageDemo = await tableHasColumn('Student_manage', 'is_demo');
+        const hasUsersDemo = await tableHasColumn('Users', 'is_demo');
+        const hasStudentDemo = await tableHasColumn('Student', 'is_demo');
+
         const [existing] = await connection.query(
-            `SELECT end_serial FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+            hasManageDemo
+                ? `SELECT end_serial, is_demo FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`
+                : `SELECT end_serial, 0 AS is_demo FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`,
             [year, branch, batch]
         );
+        if (!existing.length) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Student batch not found" });
+        }
+
+        if (isDemoRequest(req) && (!hasManageDemo || !existing[0].is_demo)) {
+            await connection.rollback();
+            return res.status(403).json({ message: "Demo mode: Existing student records cannot be modified." });
+        }
+
         const oldStrength = existing.length > 0 ? existing[0].end_serial : 0;
 
         // 2. Update Student_manage
@@ -501,19 +570,34 @@ app.put('/api/students/update', requireAuth, requireRole('admin'), async (req, r
 
             for (let i = oldStrength + 1; i <= numStrength; i++) {
                 const uname = formatStudentUsername(year, branch, batch, i, numStrength);
-                userRows.push([uname, 'student', defaultPasswordHash]);
-                studentRows.push([uname, branch, batch, i, year]);
+                if (hasUsersDemo) {
+                    userRows.push([uname, 'student', defaultPasswordHash, demoFlag]);
+                } else {
+                    userRows.push([uname, 'student', defaultPasswordHash]);
+                }
+
+                if (hasStudentDemo) {
+                    studentRows.push([uname, branch, batch, i, year, demoFlag]);
+                } else {
+                    studentRows.push([uname, branch, batch, i, year]);
+                }
             }
 
             if (userRows.length > 0) {
                 await connection.query(
-                    `INSERT INTO Users (username, role, password) VALUES ?
-                     ON DUPLICATE KEY UPDATE role = VALUES(role)`,
+                    hasUsersDemo
+                        ? `INSERT INTO Users (username, role, password, is_demo) VALUES ?
+                           ON DUPLICATE KEY UPDATE role = VALUES(role)`
+                        : `INSERT INTO Users (username, role, password) VALUES ?
+                           ON DUPLICATE KEY UPDATE role = VALUES(role)`,
                     [userRows]
                 );
                 await connection.query(
-                    `INSERT INTO Student (username, branch, batch, roll_no, year_of_join) VALUES ?
-                     ON DUPLICATE KEY UPDATE roll_no = VALUES(roll_no)`,
+                    hasStudentDemo
+                        ? `INSERT INTO Student (username, branch, batch, roll_no, year_of_join, is_demo) VALUES ?
+                           ON DUPLICATE KEY UPDATE roll_no = VALUES(roll_no)`
+                        : `INSERT INTO Student (username, branch, batch, roll_no, year_of_join) VALUES ?
+                           ON DUPLICATE KEY UPDATE roll_no = VALUES(roll_no)`,
                     [studentRows]
                 );
             }
@@ -548,6 +632,23 @@ app.delete('/api/students/:year/:branch/:batch', requireAuth, requireRole('admin
     const connection = await db.promise().getConnection();
     try {
         await connection.beginTransaction();
+
+        const hasManageDemo = await tableHasColumn('Student_manage', 'is_demo');
+        const [existing] = await connection.query(
+            hasManageDemo
+                ? `SELECT is_demo FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`
+                : `SELECT 1 FROM Student_manage WHERE year_of_join = ? AND branch = ? AND batch = ?`,
+            [year, branch, batch]
+        );
+        if (!existing.length) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Student batch not found" });
+        }
+
+        if (isDemoRequest(req) && (!hasManageDemo || !existing[0].is_demo)) {
+            await connection.rollback();
+            return res.status(403).json({ message: "Demo mode: Existing student records cannot be deleted." });
+        }
 
         // 1. Delete from Student_manage
         await connection.query(
@@ -592,10 +693,24 @@ app.get('/api/rooms', requireAuth, requireRole('admin'), (req, res) => {
 });
 
 // DELETE: Remove a room
-app.delete('/api/rooms/:block/:room_no', requireAuth, requireRole('admin'), (req, res) => {
+app.delete('/api/rooms/:block/:room_no', requireAuth, requireRole('admin'), async (req, res) => {
     const { block, room_no } = req.params;
+
+    if (isDemoRequest(req)) {
+        const hasDemo = await tableHasColumn('Rooms', 'is_demo');
+        if (!hasDemo) {
+            return res.status(403).json({ message: "Demo mode: Existing exam halls cannot be deleted." });
+        }
+        const [rows] = await db.promise().query(
+            'SELECT is_demo FROM Rooms WHERE block = ? AND room_no = ?',
+            [block, room_no]
+        );
+        if (rows.length && !rows[0].is_demo) {
+            return res.status(403).json({ message: "Demo mode: Existing exam halls cannot be deleted." });
+        }
+    }
+
     const query = 'DELETE FROM Rooms WHERE block = ? AND room_no = ?';
-    
     db.query(query, [block, room_no], (err, result) => {
         if (err) {
             console.error("Delete Error:", err);
@@ -614,11 +729,18 @@ app.get('/api/blocks', requireAuth, requireRole('admin'), (req, res) => {
 });
 
 // POST: Add a new block
-app.post('/api/blocks', requireAuth, requireRole('admin'), (req, res) => {
+app.post('/api/blocks', requireAuth, requireRole('admin'), async (req, res) => {
     const { block_name } = req.body;
     if (!block_name) return res.status(400).json({ message: "Block name is required" });
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
 
-    db.query('INSERT INTO blocks (block_name) VALUES (?)', [block_name], (err, result) => {
+    const hasDemo = await tableHasColumn('blocks', 'is_demo');
+    const query = hasDemo
+        ? 'INSERT INTO blocks (block_name, is_demo) VALUES (?, ?)'
+        : 'INSERT INTO blocks (block_name) VALUES (?)';
+    const params = hasDemo ? [block_name, demoFlag] : [block_name];
+
+    db.query(query, params, (err, result) => {
         if (err) {
             if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: "Block already exists" });
             return res.status(500).json(err);
@@ -628,8 +750,23 @@ app.post('/api/blocks', requireAuth, requireRole('admin'), (req, res) => {
 });
 
 // DELETE: Remove a block
-app.delete('/api/blocks/:name', requireAuth, requireRole('admin'), (req, res) => {
+app.delete('/api/blocks/:name', requireAuth, requireRole('admin'), async (req, res) => {
     const blockName = req.params.name;
+
+    if (isDemoRequest(req)) {
+        const hasDemo = await tableHasColumn('blocks', 'is_demo');
+        if (!hasDemo) {
+            return res.status(403).json({ message: "Demo mode: Existing campus blocks cannot be deleted." });
+        }
+        const [rows] = await db.promise().query(
+            'SELECT is_demo FROM blocks WHERE block_name = ?',
+            [blockName]
+        );
+        if (rows.length && !rows[0].is_demo) {
+            return res.status(403).json({ message: "Demo mode: Existing campus blocks cannot be deleted." });
+        }
+    }
+
     db.query('DELETE FROM blocks WHERE block_name = ?', [blockName], (err, result) => {
         if (err) return res.status(500).json(err);
         res.json({ message: "Block deleted successfully" });
@@ -637,9 +774,39 @@ app.delete('/api/blocks/:name', requireAuth, requireRole('admin'), (req, res) =>
 });
 
 // POST: Add or update a room
-app.post('/api/rooms', requireAuth, requireRole('admin'), (req, res) => {
+app.post('/api/rooms', requireAuth, requireRole('admin'), async (req, res) => {
     const { room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5 } = req.body;
-    const query = `
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
+
+    const hasDemo = await tableHasColumn('Rooms', 'is_demo');
+
+    if (isDemoRequest(req)) {
+        if (!hasDemo) {
+            const [existing] = await db.promise().query(
+                'SELECT 1 FROM Rooms WHERE room_no = ? AND block = ?',
+                [room_no, block]
+            );
+            if (existing.length) {
+                return res.status(403).json({ message: "Demo mode: Existing exam halls cannot be modified." });
+            }
+        } else {
+            const [existing] = await db.promise().query(
+                'SELECT is_demo FROM Rooms WHERE room_no = ? AND block = ?',
+                [room_no, block]
+            );
+            if (existing.length && !existing[0].is_demo) {
+                return res.status(403).json({ message: "Demo mode: Existing exam halls cannot be modified." });
+            }
+        }
+    }
+
+    const query = hasDemo ? `
+        INSERT INTO Rooms 
+        (room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5, is_demo)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+        capacity=?, cap_per_bench=?, col1=?, col2=?, col3=?, col4=?, col5=?, is_demo=VALUES(is_demo)
+    ` : `
         INSERT INTO Rooms 
         (room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -647,7 +814,10 @@ app.post('/api/rooms', requireAuth, requireRole('admin'), (req, res) => {
         capacity=?, cap_per_bench=?, col1=?, col2=?, col3=?, col4=?, col5=?
     `;
 
-    const values = [
+    const values = hasDemo ? [
+        room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5, demoFlag,
+        capacity, cap_per_bench, col1, col2, col3, col4, col5
+    ] : [
         room_no, block, capacity, cap_per_bench, col1, col2, col3, col4, col5,
         capacity, cap_per_bench, col1, col2, col3, col4, col5
     ];
@@ -657,6 +827,7 @@ app.post('/api/rooms', requireAuth, requireRole('admin'), (req, res) => {
         res.json({ message: "Room saved successfully" });
     });
 });
+
 
 /* -------------------------------------------------------------------------- */
 /* MANAGE TEACHERS ROUTES                                                     */
@@ -676,6 +847,7 @@ app.get('/api/teachers', requireAuth, requireRole('admin'), (req, res) => {
 app.post('/api/teachers', requireAuth, requireRole('admin'), async (req, res) => {
     const { username, password, name, department, phone } = req.body;
     const availability = "Yes";
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
 
     if (!username || !password || !name || !department || !phone) {
         return res.status(400).json({ message: "All fields are required" });
@@ -687,17 +859,36 @@ app.post('/api/teachers', requireAuth, requireRole('admin'), async (req, res) =>
         connection = await db.promise().getConnection();
         await connection.beginTransaction();
 
-        await connection.query(
-            `INSERT INTO Users (username, role, password)
-             VALUES (?, 'Teacher', ?)`,
-            [username, hashedPassword]
-        );
+        const hasUsersDemo = await tableHasColumn('Users', 'is_demo');
+        const hasTeacherDemo = await tableHasColumn('Teacher', 'is_demo');
 
-        await connection.query(
-            `INSERT INTO Teacher (username, name, availability, department, phone)
-             VALUES (?, ?, ?, ?, ?)`,
-            [username, name, availability, department, phone]
-        );
+        if (hasUsersDemo) {
+            await connection.query(
+                `INSERT INTO Users (username, role, password, is_demo)
+                 VALUES (?, 'Teacher', ?, ?)`,
+                [username, hashedPassword, demoFlag]
+            );
+        } else {
+            await connection.query(
+                `INSERT INTO Users (username, role, password)
+                 VALUES (?, 'Teacher', ?)`,
+                [username, hashedPassword]
+            );
+        }
+
+        if (hasTeacherDemo) {
+            await connection.query(
+                `INSERT INTO Teacher (username, name, availability, department, phone, is_demo)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [username, name, availability, department, phone, demoFlag]
+            );
+        } else {
+            await connection.query(
+                `INSERT INTO Teacher (username, name, availability, department, phone)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [username, name, availability, department, phone]
+            );
+        }
 
         await connection.commit();
         res.json({ message: "Teacher added successfully" });
@@ -713,10 +904,28 @@ app.post('/api/teachers', requireAuth, requireRole('admin'), async (req, res) =>
 });
 
 // DELETE: Safely delete teacher user without affecting non-teachers
-app.delete('/api/teachers/:username', requireAuth, requireRole('admin'), (req, res) => {
+app.delete('/api/teachers/:username', requireAuth, requireRole('admin'), async (req, res) => {
     const targetUsername = String(req.params.username || "").trim();
     if (!targetUsername) {
         return res.status(400).json({ message: "Username is required" });
+    }
+
+    if (targetUsername.toLowerCase() === DEMO_USERNAME) {
+        return res.status(403).json({ message: "Demo accounts cannot be deleted." });
+    }
+
+    if (isDemoRequest(req)) {
+        const hasDemo = await tableHasColumn('Teacher', 'is_demo');
+        if (!hasDemo) {
+            return res.status(403).json({ message: "Demo mode: Existing faculty records cannot be deleted." });
+        }
+        const [rows] = await db.promise().query(
+            'SELECT is_demo FROM Teacher WHERE username = ?',
+            [targetUsername]
+        );
+        if (rows.length && !rows[0].is_demo) {
+            return res.status(403).json({ message: "Demo mode: Existing faculty records cannot be deleted." });
+        }
     }
 
     db.query("DELETE FROM Users WHERE username = ? AND LOWER(role) = 'teacher'",
@@ -730,8 +939,22 @@ app.delete('/api/teachers/:username', requireAuth, requireRole('admin'), (req, r
         });
 });
 
-app.put('/api/teachers/availability', requireAuth, requireRole('admin'), (req, res) => {
+app.put('/api/teachers/availability', requireAuth, requireRole('admin'), async (req, res) => {
     const { username, availability } = req.body;
+
+    if (isDemoRequest(req)) {
+        const hasDemo = await tableHasColumn('Teacher', 'is_demo');
+        if (!hasDemo) {
+            return res.status(403).json({ message: "Demo mode: Existing faculty records cannot be modified." });
+        }
+        const [rows] = await db.promise().query(
+            'SELECT is_demo FROM Teacher WHERE username = ?',
+            [username]
+        );
+        if (rows.length && !rows[0].is_demo) {
+            return res.status(403).json({ message: "Demo mode: Existing faculty records cannot be modified." });
+        }
+    }
 
     db.query(
         `UPDATE Teacher SET availability = ? WHERE username = ?`,
@@ -767,6 +990,8 @@ app.post("/api/teachers/upload-excel", requireAuth, requireRole('admin'), (req, 
             return res.status(400).json({ message: "No file uploaded" });
         }
 
+        const demoFlag = isDemoRequest(req) ? 1 : 0;
+
         try {
             const workbook = XLSX.readFile(req.file.path);
             const sheetName = workbook.SheetNames[0];
@@ -792,6 +1017,9 @@ app.post("/api/teachers/upload-excel", requireAuth, requireRole('admin'), (req, 
             );
             const dataRows = hasHeader ? rows.slice(1) : rows;
 
+            const hasUsersDemo = await tableHasColumn('Users', 'is_demo');
+            const hasTeacherDemo = await tableHasColumn('Teacher', 'is_demo');
+
             for (const row of dataRows) {
                 const username = String(row[0] || "").trim();
                 const name = String(row[1] || "").trim();
@@ -802,25 +1030,49 @@ app.post("/api/teachers/upload-excel", requireAuth, requireRole('admin'), (req, 
                     continue;
                 }
 
-                await db.promise().query(
-                    `INSERT INTO Users (username, role, password)
-                     VALUES (?, ?, ?)
-                     ON DUPLICATE KEY UPDATE
-                     role=VALUES(role),
-                     password=VALUES(password)`,
-                    [username, role, hashedDefaultPassword]
-                );
+                if (hasUsersDemo) {
+                    await db.promise().query(
+                        `INSERT INTO Users (username, role, password, is_demo)
+                         VALUES (?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE
+                         role=VALUES(role),
+                         password=VALUES(password)`,
+                        [username, role, hashedDefaultPassword, demoFlag]
+                    );
+                } else {
+                    await db.promise().query(
+                        `INSERT INTO Users (username, role, password)
+                         VALUES (?, ?, ?)
+                         ON DUPLICATE KEY UPDATE
+                         role=VALUES(role),
+                         password=VALUES(password)`,
+                        [username, role, hashedDefaultPassword]
+                    );
+                }
 
-                await db.promise().query(
-                    `INSERT INTO Teacher (username, name, availability, department, phone)
-                     VALUES (?, ?, ?, ?, ?)
-                     ON DUPLICATE KEY UPDATE
-                     name=VALUES(name),
-                     department=VALUES(department),
-                     phone=VALUES(phone),
-                     availability=VALUES(availability)`,
-                    [username, name, availability, department, phone]
-                );
+                if (hasTeacherDemo) {
+                    await db.promise().query(
+                        `INSERT INTO Teacher (username, name, availability, department, phone, is_demo)
+                         VALUES (?, ?, ?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE
+                         name=VALUES(name),
+                         department=VALUES(department),
+                         phone=VALUES(phone),
+                         availability=VALUES(availability)`,
+                        [username, name, availability, department, phone, demoFlag]
+                    );
+                } else {
+                    await db.promise().query(
+                        `INSERT INTO Teacher (username, name, availability, department, phone)
+                         VALUES (?, ?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE
+                         name=VALUES(name),
+                         department=VALUES(department),
+                         phone=VALUES(phone),
+                         availability=VALUES(availability)`,
+                        [username, name, availability, department, phone]
+                    );
+                }
 
                 processedCount += 1;
             }
@@ -875,37 +1127,47 @@ app.post('/api/exam-schedule/add', requireAuth, requireRole('admin'), async (req
     const dateVal = req.body.date ?? req.body.examDate;
     const session = req.body.session;
     const examNumber = req.body.examNumber ?? req.body.exam_number ?? 1;
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
 
     const formattedDate = safeFormatDate(dateVal);
     if (!formattedDate) {
         return res.status(400).json({ message: "Invalid exam date provided" });
     }
 
+    const hasExamDemo = await tableHasColumn('Exam_schedule', 'is_demo');
     let values = [];
     if (req.body.subjects && typeof req.body.subjects === 'object' && !Array.isArray(req.body.subjects)) {
         values = Object.entries(req.body.subjects)
             .filter(([_, sub]) => sub?.name && String(sub.name).trim() !== "")
-            .map(([branch, sub]) => [
-                Number(yearVal),
-                Number(examNumber) || 1,
-                formattedDate,
-                session,
-                branch,
-                String(sub.name || '').trim(),
-                String(sub.code || '').trim()
-            ]);
+            .map(([branch, sub]) => {
+                const row = [
+                    Number(yearVal),
+                    Number(examNumber) || 1,
+                    formattedDate,
+                    session,
+                    branch,
+                    String(sub.name || '').trim(),
+                    String(sub.code || '').trim()
+                ];
+                if (hasExamDemo) row.push(demoFlag);
+                return row;
+            });
     } else if (Array.isArray(req.body.branches)) {
         values = req.body.branches
             .filter(b => (b.subjectName || b.subject) && String(b.subjectName || b.subject).trim() !== "")
-            .map(b => [
-                Number(yearVal),
-                Number(examNumber) || 1,
-                formattedDate,
-                session,
-                b.branch,
-                String(b.subjectName || b.subject || '').trim(),
-                String(b.subjectCode || b.sub_code || '').trim()
-            ]);
+            .map(b => {
+                const row = [
+                    Number(yearVal),
+                    Number(examNumber) || 1,
+                    formattedDate,
+                    session,
+                    b.branch,
+                    String(b.subjectName || b.subject || '').trim(),
+                    String(b.subjectCode || b.sub_code || '').trim()
+                ];
+                if (hasExamDemo) row.push(demoFlag);
+                return row;
+            });
     }
 
     if (!values.length) {
@@ -913,12 +1175,15 @@ app.post('/api/exam-schedule/add', requireAuth, requireRole('admin'), async (req
     }
 
     try {
-        await db.promise().query(
-            `INSERT INTO Exam_schedule
-            (year, exam_number, exam_date, session, branch, subject, sub_code)
-            VALUES ?`,
-            [values]
-        );
+        const insertSql = hasExamDemo
+            ? `INSERT INTO Exam_schedule
+               (year, exam_number, exam_date, session, branch, subject, sub_code, is_demo)
+               VALUES ?`
+            : `INSERT INTO Exam_schedule
+               (year, exam_number, exam_date, session, branch, subject, sub_code)
+               VALUES ?`;
+
+        await db.promise().query(insertSql, [values]);
         res.json({ message: "Exam schedule added successfully" });
     } catch (err) {
         console.error("Exam schedule add error:", err);
@@ -932,6 +1197,20 @@ app.put('/api/exam-schedule/update/:id', requireAuth, requireRole('admin'), asyn
     const dateVal = req.body.date ?? req.body.examDate;
     const session = req.body.session;
     const examNumber = req.body.examNumber ?? req.body.exam_number ?? 1;
+
+    if (isDemoRequest(req)) {
+        const hasDemo = await tableHasColumn('Exam_schedule', 'is_demo');
+        if (!hasDemo) {
+            return res.status(403).json({ message: "Demo mode: Existing timetable entries cannot be modified." });
+        }
+        const [rows] = await db.promise().query(
+            'SELECT is_demo FROM Exam_schedule WHERE exam_id = ?',
+            [req.params.id]
+        );
+        if (rows.length && !rows[0].is_demo) {
+            return res.status(403).json({ message: "Demo mode: Existing timetable entries cannot be modified." });
+        }
+    }
 
     const formattedDate = safeFormatDate(dateVal);
     if (!formattedDate) {
@@ -987,7 +1266,21 @@ app.put('/api/exam-schedule/update/:id', requireAuth, requireRole('admin'), asyn
 });
 
 // DELETE EXAM
-app.delete('/api/exam-schedule/:id', requireAuth, requireRole('admin'), (req, res) => {
+app.delete('/api/exam-schedule/:id', requireAuth, requireRole('admin'), async (req, res) => {
+    if (isDemoRequest(req)) {
+        const hasDemo = await tableHasColumn('Exam_schedule', 'is_demo');
+        if (!hasDemo) {
+            return res.status(403).json({ message: "Demo mode: Existing timetable entries cannot be deleted." });
+        }
+        const [rows] = await db.promise().query(
+            'SELECT is_demo FROM Exam_schedule WHERE exam_id = ?',
+            [req.params.id]
+        );
+        if (rows.length && !rows[0].is_demo) {
+            return res.status(403).json({ message: "Demo mode: Existing timetable entries cannot be deleted." });
+        }
+    }
+
     const runDelete = (tableName) => {
         const query = `DELETE FROM ${tableName} WHERE exam_id = ?`;
         return new Promise((resolve, reject) => {
@@ -1007,6 +1300,7 @@ app.delete('/api/exam-schedule/:id', requireAuth, requireRole('admin'), (req, re
                 .catch((fallbackErr) => res.status(500).json(fallbackErr));
         });
 });
+
 
 /* -------------------------------------------------------------------------- */
 /* LOGIN ROUTES                                                               */
@@ -1037,14 +1331,13 @@ app.post("/api/login", authRateLimiter, (req, res) => {
     }
     candidateUsernames = [...new Set(candidateUsernames)];
 
-    const query = `
-        SELECT * FROM Users
-        WHERE LOWER(TRIM(username)) IN (?)
-          AND LOWER(TRIM(role)) = LOWER(?)
-        LIMIT 1
-    `;
+    const isDemoLogin = candidateUsernames.includes(DEMO_USERNAME);
+    const query = isDemoLogin
+        ? `SELECT * FROM Users WHERE LOWER(TRIM(username)) IN (?) LIMIT 1`
+        : `SELECT * FROM Users WHERE LOWER(TRIM(username)) IN (?) AND LOWER(TRIM(role)) = LOWER(?) LIMIT 1`;
+    const queryParams = isDemoLogin ? [candidateUsernames] : [candidateUsernames, role];
 
-    db.query(query, [candidateUsernames, role], async (err, results) => {
+    db.query(query, queryParams, async (err, results) => {
 
         if (err) {
             console.error("Login database error:", err);
@@ -1081,16 +1374,23 @@ app.post("/api/login", authRateLimiter, (req, res) => {
         if (!match)
             return res.status(401).json({ message: "Invalid login credentials" });
 
+        const isDemo = String(user.username || "").trim().toLowerCase() === DEMO_USERNAME;
+        const normalizedRoleInput = role.toLowerCase();
+        const effectiveRole = (isDemo && ['admin', 'teacher'].includes(normalizedRoleInput))
+            ? normalizedRoleInput
+            : user.role;
+
         const token = jwt.sign(
-            { username: user.username, role: user.role },
+            { username: user.username, role: effectiveRole, isDemo },
             SECRET_KEY,
             { expiresIn: "4h" }
         );
 
         res.json({
             success: true,
-            role: user.role,
+            role: effectiveRole,
             username: user.username,
+            isDemo,
             token: token
         });
 
@@ -1101,9 +1401,14 @@ app.post("/api/login", authRateLimiter, (req, res) => {
 app.post("/api/teacher/change-password", requireAuth, requireRole('teacher'), async (req, res) => {
     const user = req.user;
 
+    if (String(user.username || "").trim().toLowerCase() === DEMO_USERNAME) {
+        return res.status(403).json({ message: "Password changes are disabled for the demo account." });
+    }
+
     const currentPassword = String(req.body.currentPassword || "");
     const newPassword = String(req.body.newPassword || "");
     const confirmPassword = String(req.body.confirmPassword || "");
+
 
     if (!currentPassword || !newPassword || !confirmPassword) {
         return res.status(400).json({ message: "All password fields are required" });
@@ -1297,6 +1602,20 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
     const { examDate, session, selectedYears, selectedRooms } = req.body;
     const formattedDate = safeFormatDate(examDate);
 
+    if (isDemoRequest(req)) {
+        const now = Date.now();
+        const elapsed = now - (demoCooldowns.seating || 0);
+        if (elapsed < DEMO_COOLDOWN_MS) {
+            const remainingSec = Math.ceil((DEMO_COOLDOWN_MS - elapsed) / 1000);
+            const mins = Math.floor(remainingSec / 60);
+            const secs = remainingSec % 60;
+            return res.status(429).json({
+                message: `Demo cooldown in effect. Please wait ${mins}m ${secs}s before generating seating again.`,
+                retryAfterSeconds: remainingSec
+            });
+        }
+    }
+
     console.log(`[SEATING TIMING] [allocation start] Request received at ${new Date().toISOString()} (date: ${formattedDate}, session: ${session}, years: ${JSON.stringify(selectedYears)}, rooms: ${selectedRooms?.length})`);
     console.time("[SEATING TIMING] [total request time]");
 
@@ -1329,6 +1648,17 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         const exam_id = examRows[0].exam_id;
         const examIds = examRows.map(e => e.exam_id);
 
+        if (isDemoRequest(req)) {
+            const [existingProdSeating] = await connection.query(
+                `SELECT seating_id FROM Seating_allocation WHERE session = ? AND is_demo = 0 AND exam_id IN (?) LIMIT 1`,
+                [session, examIds]
+            );
+            if (existingProdSeating.length > 0) {
+                await connection.rollback();
+                return res.status(403).json({ message: "Demo mode: Cannot overwrite existing production seating records." });
+            }
+        }
+
         const examMap = {};
         examRows.forEach(row => {
             examMap[`${row.year}_${row.branch}`] = row.exam_id;
@@ -1339,6 +1669,7 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
             `DELETE FROM Seating_allocation WHERE exam_id IN (?)`,
             [examIds]
         );
+
 
         // 2️⃣ Fetch Selected Rooms (sorted)
         const [rooms] = await connection.query(
@@ -1465,6 +1796,7 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                         const student = yearQueues[assignedYear].shift();
                         const studentAcadYear = baseYear - student.year + 1;
                         const targetExamId = examMap[`${studentAcadYear}_${student.branch}`] || exam_id;
+                        const demoFlag = isDemoRequest(req) ? 1 : 0;
 
                         seatingValues.push([
                             targetExamId,
@@ -1477,7 +1809,8 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                             student.batch,
                             student.roll_no,
                             student.branch,
-                            session
+                            session,
+                            demoFlag
                         ]);
                     }
 
@@ -1505,6 +1838,7 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                             const student = yearQueues[rightYear].shift();
                             const studentAcadYear = baseYear - student.year + 1;
                             const targetExamId = examMap[`${studentAcadYear}_${student.branch}`] || exam_id;
+                            const demoFlag = isDemoRequest(req) ? 1 : 0;
 
                             seatingValues.push([
                                 targetExamId,
@@ -1517,7 +1851,8 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
                                 student.batch,
                                 student.roll_no,
                                 student.branch,
-                                session
+                                session,
+                                demoFlag
                             ]);
                         }
                     }
@@ -1525,29 +1860,58 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
             }
         }
 
+        const demoFlag = isDemoRequest(req) ? 1 : 0;
+
         // Bulk insert all allocated seats in a single SQL statement
         const tBulkInsertStart = Date.now();
+        const hasSeatingDemo = await tableHasColumn('Seating_allocation', 'is_demo');
+        const hasHistoryDemo = await tableHasColumn('Allocation_History', 'is_demo');
+
         if (seatingValues.length > 0) {
-            await connection.query(
-                `INSERT INTO Seating_allocation
-                (exam_id, room_no, block,
-                 column_no, bench_no, seat_position,
-                 username, batch, roll_no, branch, session)
-                 VALUES ?`,
-                [seatingValues]
-            );
+            if (hasSeatingDemo) {
+                await connection.query(
+                    `INSERT INTO Seating_allocation
+                    (exam_id, room_no, block,
+                     column_no, bench_no, seat_position,
+                     username, batch, roll_no, branch, session, is_demo)
+                     VALUES ?`,
+                    [seatingValues]
+                );
+            } else {
+                const legacySeatingValues = seatingValues.map(row => row.slice(0, 11));
+                await connection.query(
+                    `INSERT INTO Seating_allocation
+                    (exam_id, room_no, block,
+                     column_no, bench_no, seat_position,
+                     username, batch, roll_no, branch, session)
+                     VALUES ?`,
+                    [legacySeatingValues]
+                );
+            }
         }
         const bulkInsertElapsed = Date.now() - tBulkInsertStart;
 
         // Upsert into Allocation_History for this slot
-        await connection.query(
-            `INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms)
-             VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE 
-                 selected_years = VALUES(selected_years), 
-                 selected_rooms = VALUES(selected_rooms)`,
-            [formattedDate, session, JSON.stringify(selectedYears), JSON.stringify(selectedRooms)]
-        );
+        if (hasHistoryDemo) {
+            await connection.query(
+                `INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms, is_demo)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE 
+                     selected_years = VALUES(selected_years), 
+                     selected_rooms = VALUES(selected_rooms),
+                     is_demo = VALUES(is_demo)`,
+                [formattedDate, session, JSON.stringify(selectedYears), JSON.stringify(selectedRooms), demoFlag]
+            );
+        } else {
+            await connection.query(
+                `INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms)
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE 
+                     selected_years = VALUES(selected_years), 
+                     selected_rooms = VALUES(selected_rooms)`,
+                [formattedDate, session, JSON.stringify(selectedYears), JSON.stringify(selectedRooms)]
+            );
+        }
 
         const allocElapsed = Date.now() - tAllocStart;
         console.log(`[SEATING TIMING] [seating allocation completion] Allocation calculation & bulk insert of ${seatingValues.length} seats completed in ${allocElapsed} ms (bulk SQL query took ${bulkInsertElapsed} ms)`);
@@ -1608,19 +1972,39 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
             `SELECT COALESCE(MAX(report_id), 0) + 1 AS nextReportId FROM Reports`
         );
 
-        await connection.query(
-            `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
-             VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId, "Hall-wise", formattedDate, hallWiseReportName, hallWiseFileName]
-        );
+        const hasReportsDemo = await tableHasColumn('Reports', 'is_demo');
+        if (hasReportsDemo) {
+            await connection.query(
+                `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath, is_demo)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [reportIdRow.nextReportId, "Hall-wise", formattedDate, hallWiseReportName, hallWiseFileName, demoFlag]
+            );
 
-        await connection.query(
-            `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
-             VALUES (?, ?, ?, ?, ?)`,
-            [reportIdRow.nextReportId + 1, "Total Seating", formattedDate, totalSeatingReportName, totalSeatingFileName]
-        );
+            await connection.query(
+                `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath, is_demo)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [reportIdRow.nextReportId + 1, "Total Seating", formattedDate, totalSeatingReportName, totalSeatingFileName, demoFlag]
+            );
+        } else {
+            await connection.query(
+                `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [reportIdRow.nextReportId, "Hall-wise", formattedDate, hallWiseReportName, hallWiseFileName]
+            );
+
+            await connection.query(
+                `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [reportIdRow.nextReportId + 1, "Total Seating", formattedDate, totalSeatingReportName, totalSeatingFileName]
+            );
+        }
 
         await connection.commit();
+
+        if (isDemoRequest(req)) {
+            demoCooldowns.seating = Date.now();
+        }
+
         console.log(`[SEATING TIMING] [database queries] Saved report records & committed transaction in ${Date.now() - tDbReportsStart} ms`);
 
         const totalElapsed = Date.now() - seatingReqStart;
@@ -1651,7 +2035,7 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
 //                         SAVE & FETCH SELECTION ROUTES
 // ----------------------------------------------------------------------------
 
-app.post('/api/allocation/save', requireAuth, requireRole('admin'), (req, res) => {
+app.post('/api/allocation/save', requireAuth, requireRole('admin'), async (req, res) => {
     const { examDate, session, selectedYears, selectedRooms } = req.body;
     const formattedDate = safeFormatDate(examDate);
     if (!formattedDate || !session) {
@@ -1659,16 +2043,45 @@ app.post('/api/allocation/save', requireAuth, requireRole('admin'), (req, res) =
     }
     const yearsStr = JSON.stringify(selectedYears || []);
     const roomsStr = JSON.stringify(selectedRooms || []);
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
 
-    const query = `
-        INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms)
-        VALUES (?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE 
-            selected_years = VALUES(selected_years), 
-            selected_rooms = VALUES(selected_rooms)
-    `;
+    if (isDemoRequest(req)) {
+        try {
+            const hasHistoryDemo = await tableHasColumn('Allocation_History', 'is_demo');
+            if (!hasHistoryDemo) {
+                return res.status(403).json({ message: "Demo mode: Existing production allocation setup cannot be modified." });
+            }
+            const [historyRows] = await db.promise().query(
+                `SELECT is_demo FROM Allocation_History WHERE exam_date = ? AND session = ?`,
+                [formattedDate, session]
+            );
+            if (historyRows.length > 0 && !historyRows[0].is_demo) {
+                return res.status(403).json({ message: "Demo mode: Existing production allocation setup cannot be modified." });
+            }
+        } catch (chkErr) {
+            console.error("Save check error:", chkErr);
+        }
+    }
 
-    db.query(query, [formattedDate, session, yearsStr, roomsStr], (err, result) => {
+    const hasHistoryDemo = await tableHasColumn('Allocation_History', 'is_demo');
+    const query = hasHistoryDemo
+        ? `INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms, is_demo)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE 
+               selected_years = VALUES(selected_years), 
+               selected_rooms = VALUES(selected_rooms),
+               is_demo = VALUES(is_demo)`
+        : `INSERT INTO Allocation_History (exam_date, session, selected_years, selected_rooms)
+           VALUES (?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE 
+               selected_years = VALUES(selected_years), 
+               selected_rooms = VALUES(selected_rooms)`;
+
+    const queryParams = hasHistoryDemo
+        ? [formattedDate, session, yearsStr, roomsStr, demoFlag]
+        : [formattedDate, session, yearsStr, roomsStr];
+
+    db.query(query, queryParams, (err, result) => {
         if (err) return res.status(500).json({ error: "Failed to save selection" });
         res.json({ message: "Selection saved successfully" });
     });
@@ -1740,6 +2153,37 @@ app.delete('/api/allocation/delete', requireAuth, requireRole('admin'), async (r
             `SELECT exam_id FROM Exam_schedule WHERE exam_date = ? AND session = ?`,
             [formattedDate, session]
         );
+
+        if (isDemoRequest(req)) {
+            const hasSeatingDemo = await tableHasColumn('Seating_allocation', 'is_demo');
+            const hasHistDemo = await tableHasColumn('Allocation_History', 'is_demo');
+
+            if (!hasSeatingDemo || !hasHistDemo) {
+                await connection.rollback();
+                return res.status(403).json({ message: "Demo mode: Existing production seating records cannot be deleted." });
+            }
+
+            if (examRows.length > 0) {
+                const examIds = examRows.map(e => e.exam_id);
+                const [prodSeating] = await connection.query(
+                    `SELECT seating_id FROM Seating_allocation WHERE is_demo = 0 AND exam_id IN (?) LIMIT 1`,
+                    [examIds]
+                );
+                if (prodSeating.length > 0) {
+                    await connection.rollback();
+                    return res.status(403).json({ message: "Demo mode: Existing production seating records cannot be deleted." });
+                }
+            }
+
+            const [prodHistory] = await connection.query(
+                `SELECT id FROM Allocation_History WHERE exam_date = ? AND session = ? AND is_demo = 0 LIMIT 1`,
+                [formattedDate, session]
+            );
+            if (prodHistory.length > 0) {
+                await connection.rollback();
+                return res.status(403).json({ message: "Demo mode: Existing production seating records cannot be deleted." });
+            }
+        }
 
         if (examRows.length > 0) {
             const examIds = examRows.map(e => e.exam_id);
@@ -2938,8 +3382,10 @@ app.get("/api/reports", requireAuth, requireRole('admin'), async (req, res) => {
     const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
 
     try {
+        const hasDemo = await tableHasColumn('Reports', 'is_demo');
+        const demoSelect = hasDemo ? 'is_demo' : '0 AS is_demo';
         const [rows] = await db.promise().query(
-            `SELECT report_id, report_type, exam_date, report_name, generated_at, filepath
+            `SELECT report_id, report_type, exam_date, report_name, generated_at, filepath, ${demoSelect}
              FROM Reports
              ${whereClause}
              ORDER BY generated_at DESC, report_id DESC`,
@@ -3032,6 +3478,20 @@ app.delete("/api/reports/bulk", requireAuth, requireRole('admin'), async (req, r
     }
 
     try {
+        if (isDemoRequest(req)) {
+            const hasDemo = await tableHasColumn('Reports', 'is_demo');
+            if (!hasDemo) {
+                return res.status(403).json({ message: "Demo mode: Existing production reports cannot be deleted." });
+            }
+            const [prodReports] = await db.promise().query(
+                `SELECT report_id FROM Reports WHERE report_id IN (?) AND is_demo = 0`,
+                [reportIds]
+            );
+            if (prodReports.length > 0) {
+                return res.status(403).json({ message: "Demo mode: Existing production reports cannot be deleted." });
+            }
+        }
+
         const [rows] = await db.promise().query(
             `SELECT filepath FROM Reports WHERE report_id IN (?)`,
             [reportIds]
@@ -3062,6 +3522,20 @@ app.delete("/api/reports/bulk", requireAuth, requireRole('admin'), async (req, r
 // Single delete report
 app.delete("/api/reports/:id", requireAuth, requireRole('admin'), async (req, res) => {
     try {
+        if (isDemoRequest(req)) {
+            const hasDemo = await tableHasColumn('Reports', 'is_demo');
+            if (!hasDemo) {
+                return res.status(403).json({ message: "Demo mode: Existing production reports cannot be deleted." });
+            }
+            const [targetReport] = await db.promise().query(
+                `SELECT is_demo FROM Reports WHERE report_id = ?`,
+                [req.params.id]
+            );
+            if (targetReport.length && !targetReport[0].is_demo) {
+                return res.status(403).json({ message: "Demo mode: Existing production reports cannot be deleted." });
+            }
+        }
+
         const [rows] = await db.promise().query(
             `SELECT filepath FROM Reports WHERE report_id = ?`,
             [req.params.id]
@@ -3280,7 +3754,11 @@ app.get('/api/teacher/dashboard', requireAuth, requireRole('teacher'), (req, res
             return res.status(500).json({ message: 'Failed to fetch teacher details' });
         }
 
-        if (!teacherResults.length) {
+        const teacherProfile = teacherResults.length > 0 
+            ? teacherResults[0] 
+            : (isDemoRequest(req) ? { username: DEMO_USERNAME, name: 'Demo Faculty' } : null);
+
+        if (!teacherProfile) {
             return res.status(404).json({ message: 'Teacher not found' });
         }
 
@@ -3291,14 +3769,14 @@ app.get('/api/teacher/dashboard', requireAuth, requireRole('teacher'), (req, res
             }
 
             return res.json({
-                teacher: teacherResults[0],
-                duties: dutyResults
+                teacher: teacherProfile,
+                duties: dutyResults || []
             });
         });
     });
 });
 
-app.post('/api/teacher/unavailability', requireAuth, requireRole('teacher'), (req, res) => {
+app.post('/api/teacher/unavailability', requireAuth, requireRole('teacher'), async (req, res) => {
     const user = req.user;
     const examDate = String(req.body.examDate || '').trim();
     const session = String(req.body.session || '').trim();
@@ -3317,27 +3795,69 @@ app.post('/api/teacher/unavailability', requireAuth, requireRole('teacher'), (re
         return res.status(400).json({ message: 'Reason too long make it shorter' });
     }
 
-    ensureRequestTables().then(() => {
-        db.query(
-            `INSERT INTO teacher_unavailability (Tusername, exam_date, session, reason)
-             VALUES (?, ?, ?, ?)`,
-            [user.username, examDate, session, reason],
-            (err, result) => {
-                if (err) {
-                    console.error('Failed to save teacher unavailability:', err);
-                    return res.status(500).json({ message: 'Failed to save unavailability request.' });
-                }
+    // 5-second cooldown per teacher
+    const lastRequestTime = teacherUnavailabilityCooldowns.get(user.username) || 0;
+    const elapsed = Date.now() - lastRequestTime;
+    if (elapsed < 5000) {
+        const remainingSeconds = Math.ceil((5000 - elapsed) / 1000);
+        return res.status(429).json({
+            message: `Please wait ${remainingSeconds}s before submitting another request.`
+        });
+    }
 
-                return res.json({
-                    message: 'Unavailability request submitted successfully.',
-                    unavailabilityId: result.insertId
-                });
-            }
+    const demoFlag = isDemoRequest(req) ? 1 : 0;
+
+    try {
+        const hasStatus = await tableHasColumn('teacher_unavailability', 'status');
+        const hasDemo = await tableHasColumn('teacher_unavailability', 'is_demo');
+
+        const cols = ['Tusername', 'exam_date', 'session', 'reason'];
+        const placeholders = ['?', '?', '?', '?'];
+        const values = [user.username, examDate, session, reason];
+
+        if (hasStatus) {
+            cols.push('status');
+            placeholders.push('?');
+            values.push('Pending Review');
+        }
+        if (hasDemo) {
+            cols.push('is_demo');
+            placeholders.push('?');
+            values.push(demoFlag);
+        }
+
+        const sql = `INSERT INTO teacher_unavailability (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
+        const [result] = await db.promise().query(sql, values);
+
+        teacherUnavailabilityCooldowns.set(user.username, Date.now());
+
+        return res.json({
+            message: 'Unavailability request submitted successfully.',
+            unavailabilityId: result.insertId
+        });
+    } catch (err) {
+        console.error('Failed to save teacher unavailability:', err);
+        return res.status(500).json({ message: 'Failed to save unavailability request.' });
+    }
+});
+
+app.get('/api/teacher/unavailability', requireAuth, requireRole('teacher'), async (req, res) => {
+    try {
+        const hasStatus = await tableHasColumn('teacher_unavailability', 'status');
+        const statusField = hasStatus ? 'status' : "'Pending Review' AS status";
+
+        const [rows] = await db.promise().query(
+            `SELECT unavailability_id, exam_date, session, reason, ${statusField}, created_at
+             FROM teacher_unavailability
+             WHERE Tusername = ?
+             ORDER BY unavailability_id DESC`,
+            [req.user.username]
         );
-    }).catch((error) => {
-        console.error('Failed to prepare teacher unavailability tables:', error);
-        return res.status(500).json({ message: 'Failed to prepare unavailability storage.' });
-    });
+        res.json(rows);
+    } catch (error) {
+        console.error('Failed to fetch teacher unavailability requests:', error);
+        res.status(500).json({ message: 'Failed to fetch unavailability requests.' });
+    }
 });
 
 app.get('/api/admin/requests/unread-count', requireAuth, requireRole('admin'), async (req, res) => {
@@ -3350,7 +3870,8 @@ app.get('/api/admin/requests/unread-count', requireAuth, requireRole('admin'), a
              WHERE state_id = 1`
         );
 
-        const lastSeenId = Number(stateRow?.last_seen_unavailability_id || 0);
+        const lastSeenId = stateRow ? stateRow.last_seen_unavailability_id : 0;
+
         const [[countRow]] = await db.promise().query(
             `SELECT COUNT(*) AS unreadCount
              FROM teacher_unavailability
@@ -3358,22 +3879,14 @@ app.get('/api/admin/requests/unread-count', requireAuth, requireRole('admin'), a
             [lastSeenId]
         );
 
-        const [[totalRow]] = await db.promise().query(
-            `SELECT COUNT(*) AS pendingCount
-             FROM teacher_unavailability`
-        );
-
-        res.json({
-            unreadCount: Number(countRow.unreadCount || 0),
-            pendingCount: Number(totalRow.pendingCount || 0)
-        });
+        res.json({ unreadCount: countRow ? countRow.unreadCount : 0 });
     } catch (error) {
-        console.error('Failed to fetch unread request count:', error);
-        res.status(500).json({ message: 'Failed to fetch unread request count.' });
+        console.error('Failed to fetch unread requests count:', error);
+        res.status(500).json({ message: 'Failed to fetch unread requests count.' });
     }
 });
 
-app.post('/api/admin/requests/mark-read', requireAuth, requireRole('admin'), async (req, res) => {
+app.post('/api/admin/requests/mark-seen', requireAuth, requireRole('admin'), async (req, res) => {
     try {
         await ensureRequestTables();
 
@@ -3382,17 +3895,19 @@ app.post('/api/admin/requests/mark-read', requireAuth, requireRole('admin'), asy
              FROM teacher_unavailability`
         );
 
+        const maxId = maxRow ? maxRow.maxId : 0;
+
         await db.promise().query(
             `UPDATE admin_request_state
              SET last_seen_unavailability_id = ?
              WHERE state_id = 1`,
-            [Number(maxRow.maxId || 0)]
+            [maxId]
         );
 
-        res.json({ message: 'Requests marked as read.' });
+        res.json({ success: true, lastSeenId: maxId });
     } catch (error) {
-        console.error('Failed to mark requests as read:', error);
-        res.status(500).json({ message: 'Failed to mark requests as read.' });
+        console.error('Failed to mark requests as seen:', error);
+        res.status(500).json({ message: 'Failed to mark requests as seen.' });
     }
 });
 
@@ -3406,9 +3921,13 @@ app.get('/api/admin/requests', requireAuth, requireRole('admin'), (req, res) => 
                 t.availability,
                 tu.exam_date,
                 tu.session,
-                tu.reason
+                tu.reason,
+                tu.status,
+                tu.is_demo,
+                tu.created_at
              FROM teacher_unavailability tu
              LEFT JOIN Teacher t ON t.username = tu.Tusername
+             WHERE tu.status = 'Pending Review' OR tu.status IS NULL
              ORDER BY tu.unavailability_id DESC`,
             (err, results) => {
                 if (err) {
@@ -3432,16 +3951,20 @@ app.post('/api/admin/requests/:id/decision', requireAuth, requireRole('admin'), 
         const requestId = Number(req.params.id);
         const decision = String(req.body.decision || '').trim().toLowerCase();
 
-        if (!Number.isInteger(requestId) || requestId <= 0) {
-            return res.status(400).json({ message: 'Invalid request id.' });
+        if (!requestId || Number.isNaN(requestId)) {
+            return res.status(400).json({ message: 'Invalid request ID.' });
         }
 
         if (!['accept', 'reject'].includes(decision)) {
             return res.status(400).json({ message: 'Invalid decision.' });
         }
 
+        const hasDemo = await tableHasColumn('teacher_unavailability', 'is_demo');
+        const hasStatus = await tableHasColumn('teacher_unavailability', 'status');
+
+        const demoSelect = hasDemo ? 'is_demo' : '0 AS is_demo';
         const [[requestRow]] = await db.promise().query(
-            `SELECT Tusername
+            `SELECT Tusername, ${demoSelect}
              FROM teacher_unavailability
              WHERE unavailability_id = ?`,
             [requestId]
@@ -3451,6 +3974,11 @@ app.post('/api/admin/requests/:id/decision', requireAuth, requireRole('admin'), 
             return res.status(404).json({ message: 'Request not found.' });
         }
 
+        if (hasDemo && isDemoRequest(req) && requestRow.is_demo === 0) {
+            return res.status(403).json({ message: "Demo admin cannot decide on existing requests created in normal mode." });
+        }
+
+        const newStatus = decision === 'accept' ? 'Accepted' : 'Declined';
         const updatedAvailability = decision === 'accept' ? 'No' : 'Yes';
 
         await db.promise().query(
@@ -3460,21 +3988,116 @@ app.post('/api/admin/requests/:id/decision', requireAuth, requireRole('admin'), 
             [updatedAvailability, requestRow.Tusername]
         );
 
-        await db.promise().query(
-            `DELETE FROM teacher_unavailability
-             WHERE unavailability_id = ?`,
-            [requestId]
-        );
+        if (hasStatus) {
+            await db.promise().query(
+                `UPDATE teacher_unavailability
+                 SET status = ?
+                 WHERE unavailability_id = ?`,
+                [newStatus, requestId]
+            );
+        }
 
         return res.json({
-            message: `Teacher availability updated to ${updatedAvailability}.`,
+            message: `Teacher request marked as ${newStatus}. Availability updated to ${updatedAvailability}.`,
             availability: updatedAvailability,
             username: requestRow.Tusername,
+            status: newStatus,
             removedRequestId: requestId
         });
     } catch (error) {
         console.error('Failed to update request decision:', error);
         return res.status(500).json({ message: 'Failed to update teacher availability.' });
+    }
+});
+
+app.get('/api/admin/demo-cooldowns', requireAuth, requireRole('admin'), (req, res) => {
+    if (!isDemoRequest(req)) {
+        return res.json({
+            isDemo: false,
+            seatingRemaining: 0,
+            dutyRemaining: 0,
+            cooldownDuration: 300
+        });
+    }
+
+    const now = Date.now();
+    const seatingElapsed = now - (demoCooldowns.seating || 0);
+    const dutyElapsed = now - (demoCooldowns.duty || 0);
+
+    const seatingRemaining = seatingElapsed < 300000 ? Math.ceil((300000 - seatingElapsed) / 1000) : 0;
+    const dutyRemaining = dutyElapsed < 300000 ? Math.ceil((300000 - dutyElapsed) / 1000) : 0;
+
+    res.json({
+        isDemo: true,
+        seatingRemaining,
+        dutyRemaining,
+        cooldownDuration: 300
+    });
+});
+
+app.post('/api/admin/demo-cleanup', requireAuth, requireRole('admin'), async (req, res) => {
+    if (isDemoRequest(req)) {
+        return res.status(403).json({ message: "Demo admin cannot trigger demo cleanup." });
+    }
+
+    const { confirmationCode } = req.body;
+    if (confirmationCode !== '+') {
+        return res.status(400).json({ message: "Invalid confirmation code." });
+    }
+
+    const connection = await db.promise().getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Foreign-key safe reverse dependency order:
+        // Child tables first, parent tables last
+        const tablesToCheck = [
+            'Seating_allocation', 'Allocation_History', 'Duty_allocation',
+            'Reports', 'teacher_unavailability', 'Exam_schedule',
+            'Rooms', 'blocks', 'Student', 'Student_manage', 'Teacher', 'Users'
+        ];
+
+        for (const tbl of tablesToCheck) {
+            const hasDemo = await tableHasColumn(tbl, 'is_demo');
+            if (!hasDemo) continue;
+
+            if (tbl === 'Reports') {
+                const [demoReports] = await connection.query(`SELECT filepath FROM Reports WHERE is_demo = 1`);
+                for (const rep of demoReports) {
+                    if (rep.filepath) {
+                        const baseFileName = path.basename(rep.filepath);
+                        const filePath = path.join(generatedReportsDir, baseFileName);
+                        if (fs.existsSync(filePath)) {
+                            try { fs.unlinkSync(filePath); } catch (e) {}
+                        }
+                    }
+                }
+                await connection.query(`DELETE FROM Reports WHERE is_demo = 1`);
+            } else if (tbl === 'Teacher' || tbl === 'Users') {
+                // EXPLICIT USERNAME PROTECTION:
+                // Never delete or modify the permanent demo account by username,
+                // regardless of is_demo flag value. Delete only additional demo-created records.
+                await connection.query(
+                    `DELETE FROM \`${tbl}\` WHERE is_demo = 1 AND LOWER(TRIM(username)) != LOWER(TRIM(?))`,
+                    [DEMO_USERNAME]
+                );
+            } else {
+                await connection.query(`DELETE FROM \`${tbl}\` WHERE is_demo = 1`);
+            }
+        }
+
+        await connection.commit();
+
+        demoCooldowns.seating = 0;
+        demoCooldowns.duty = 0;
+
+        res.json({ message: "All demo-created data has been safely purged." });
+    } catch (err) {
+        await connection.rollback();
+        console.error("Demo cleanup error:", err);
+        res.status(500).json({ message: "Failed to perform demo cleanup." });
+    } finally {
+        connection.release();
     }
 });
 
@@ -3561,6 +4184,18 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
         console.timeEnd("[PDF TIMING] total request time - Duty Allocation");
         return res.status(400).json({ message: "Valid date and session are required." });
     }
+
+    if (isDemoRequest(req)) {
+        const elapsed = Date.now() - (demoCooldowns.duty || 0);
+        if (elapsed < 300000) {
+            const remainingSeconds = Math.ceil((300000 - elapsed) / 1000);
+            return res.status(429).json({
+                message: `Demo cooldown active. Please wait ${remainingSeconds}s before generating duties again.`,
+                remainingSeconds
+            });
+        }
+    }
+
     const slotKey = getDutySlotKey(formattedDate, session);
 
     const connection = await db.promise().getConnection();
@@ -3605,10 +4240,19 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
         }
 
         // C. WORKLOAD RESTORE: If re-generating, give points back to previously assigned teachers for this slot
+        const hasDutyDemo = await tableHasColumn('Duty_allocation', 'is_demo');
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+            hasDutyDemo
+                ? `SELECT Tusername, is_demo FROM Duty_allocation WHERE exam_date = ? AND session = ?`
+                : `SELECT Tusername, 0 AS is_demo FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
             [formattedDate, session]
         );
+
+        if (prevDuties.length > 0 && isDemoRequest(req) && (!hasDutyDemo || prevDuties.some(d => d.is_demo === 0))) {
+            await connection.rollback();
+            return res.status(403).json({ message: "Demo admin cannot overwrite existing duties created in normal mode." });
+        }
+
         const previousUsernames = prevDuties.map(d => d.Tusername).filter(Boolean);
         if (previousUsernames.length > 0) {
             await connection.query(
@@ -3647,6 +4291,7 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
 
         // E. Map teachers to rooms and prepare for bulk insert
         const assignedUsernames = [];
+        const demoFlag = isDemoRequest(req) ? 1 : 0;
         const dutyValues = selectedRooms.map((roomFull, index) => {
             const blockMatch = roomFull.match(/[A-Za-z]+/);
             const roomMatch = roomFull.match(/\d+/);
@@ -3654,14 +4299,25 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
             const room_no = roomMatch ? roomMatch[0] : "";
             const tUser = teacherPool[index].username;
             assignedUsernames.push(tUser);
-            return [exam_id, room_no, block, tUser, formattedDate, session];
+            if (hasDutyDemo) {
+                return [exam_id, room_no, block, tUser, formattedDate, session, demoFlag];
+            } else {
+                return [exam_id, room_no, block, tUser, formattedDate, session];
+            }
         });
 
         // F. Finalize: Save assignments and decrement duty points
-        await connection.query(
-            `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date, session) VALUES ?`,
-            [dutyValues]
-        );
+        if (hasDutyDemo) {
+            await connection.query(
+                `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date, session, is_demo) VALUES ?`,
+                [dutyValues]
+            );
+        } else {
+            await connection.query(
+                `INSERT INTO Duty_allocation (exam_id, room_no, block, Tusername, exam_date, session) VALUES ?`,
+                [dutyValues]
+            );
+        }
 
         await connection.query(
             `UPDATE Teacher SET duty_count = duty_count - 1 WHERE username IN (?)`,
@@ -3687,19 +4343,38 @@ app.post('/api/duties/generate', requireAuth, requireRole('admin'), async (req, 
             `SELECT COALESCE(MAX(report_id), 0) + 1 AS nextReportId FROM Reports`
         );
 
-        await connection.query(
-            `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
-             VALUES (?, ?, ?, ?, ?)`,
-            [
-                reportIdRow.nextReportId,
-                "Invigilation Duty",
-                formattedDate,
-                invigilationDutyReportName,
-                `${invigilationDutyReportName}.pdf`
-            ]
-        );
+        const hasReportsDemo = await tableHasColumn('Reports', 'is_demo');
+        if (hasReportsDemo) {
+            await connection.query(
+                `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath, is_demo)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                    reportIdRow.nextReportId,
+                    "Invigilation Duty",
+                    formattedDate,
+                    invigilationDutyReportName,
+                    `${invigilationDutyReportName}.pdf`,
+                    demoFlag
+                ]
+            );
+        } else {
+            await connection.query(
+                `INSERT INTO Reports (report_id, report_type, exam_date, report_name, filepath)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [
+                    reportIdRow.nextReportId,
+                    "Invigilation Duty",
+                    formattedDate,
+                    invigilationDutyReportName,
+                    `${invigilationDutyReportName}.pdf`
+                ]
+            );
+        }
 
         await connection.commit();
+        if (isDemoRequest(req)) {
+            demoCooldowns.duty = Date.now();
+        }
         console.timeEnd("[PDF TIMING] Duty Allocation - database queries - save report & commit");
 
         console.timeEnd("[PDF TIMING] total request time - Duty Allocation");
@@ -3809,12 +4484,20 @@ app.delete('/api/duties/delete', requireAuth, requireRole('admin'), async (req, 
         await connection.beginTransaction();
 
         // Find teachers assigned to this specific slot
+        const hasDutyDemo = await tableHasColumn('Duty_allocation', 'is_demo');
         const [prevDuties] = await connection.query(
-            `SELECT Tusername FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
+            hasDutyDemo
+                ? `SELECT Tusername, is_demo FROM Duty_allocation WHERE exam_date = ? AND session = ?`
+                : `SELECT Tusername, 0 AS is_demo FROM Duty_allocation WHERE exam_date = ? AND session = ?`,
             [formattedDate, session]
         );
 
         if (prevDuties.length > 0) {
+            if (isDemoRequest(req) && (!hasDutyDemo || prevDuties.some(d => d.is_demo === 0))) {
+                await connection.rollback();
+                return res.status(403).json({ message: "Demo admin cannot delete existing duties created in normal mode." });
+            }
+
             const usernames = prevDuties.map(d => d.Tusername).filter(Boolean);
             recentDutyAssignments.set(slotKey, usernames);
             
@@ -3872,9 +4555,14 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log("-------------------------------------------");
-    console.log(` Server running on http://0.0.0.0:${PORT} `);
-    console.log(` Health check at http://0.0.0.0:${PORT}/api/health `);
-    console.log("-------------------------------------------");
-});
+if (require.main === module) {
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log("-------------------------------------------");
+        console.log(` Server running on http://0.0.0.0:${PORT} `);
+        console.log(` Health check at http://0.0.0.0:${PORT}/api/health `);
+        console.log("-------------------------------------------");
+    });
+}
+
+module.exports = app;
+

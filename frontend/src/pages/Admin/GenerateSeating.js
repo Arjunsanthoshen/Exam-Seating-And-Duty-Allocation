@@ -3,7 +3,7 @@ import axios from 'axios';
 import './GenerateSeating.css';
 import AdminSidebar from './AdminSidebar'; 
 import { API_BASE_URL } from '../../api/config';
-import { FaChevronLeft, FaChevronRight, FaBolt, FaSpinner, FaTrash, FaCheckCircle } from 'react-icons/fa';
+import { FaChevronLeft, FaChevronRight, FaBolt, FaSpinner, FaTrash, FaCheckCircle, FaRegClock } from 'react-icons/fa';
 
 const Allocation = () => {
     const [rooms, setRooms] = useState([]); 
@@ -19,11 +19,16 @@ const Allocation = () => {
     const [selectedRooms, setSelectedRooms] = useState([]);
     const [isGenerated, setIsGenerated] = useState(false);
 
-    // Loading Modal States
+    // Loading Modal & Action States
     const [isAllocating, setIsAllocating] = useState(false);
+    const [actionType, setActionType] = useState("generate"); // "generate" | "delete"
     const [allocationProgress, setAllocationProgress] = useState(0);
     const [allocationPhase, setAllocationPhase] = useState("");
     const [allocationSuccess, setAllocationSuccess] = useState(false);
+
+    // Demo Cooldown State
+    const [cooldownRemaining, setCooldownRemaining] = useState(0);
+    const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
 
     const getYYYYMMDD = (dateObj) => {
         const y = dateObj.getFullYear();
@@ -136,6 +141,34 @@ const Allocation = () => {
         }
     }, [examDate, session, loadSavedSlotState, rooms.length]);
 
+    // Demo Cooldown Sync
+    useEffect(() => {
+        if (!isDemoUser) return;
+        let isMounted = true;
+        const fetchCooldown = async () => {
+            try {
+                const token = localStorage.getItem("token");
+                const res = await axios.get(`${API_BASE_URL}/api/admin/demo-cooldowns`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (isMounted && res.data && res.data.seatingRemaining > 0) {
+                    setCooldownRemaining(res.data.seatingRemaining);
+                }
+            } catch (e) {}
+        };
+        fetchCooldown();
+        return () => { isMounted = false; };
+    }, [isDemoUser, examDate, session]);
+
+    // Demo Cooldown Ticker
+    useEffect(() => {
+        if (cooldownRemaining <= 0) return;
+        const interval = setInterval(() => {
+            setCooldownRemaining(prev => Math.max(0, prev - 1));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [cooldownRemaining]);
+
     const handleExamDateChange = (newDate) => {
         setExamDate(newDate);
         if (newDate) {
@@ -229,8 +262,14 @@ const Allocation = () => {
             return;
         }
 
+        if (isDemoUser && cooldownRemaining > 0) {
+            alert(`Demo cooldown active. Please wait ${cooldownRemaining}s before generating seating again.`);
+            return;
+        }
+
         const payload = { examDate, session, selectedYears, selectedRooms };
 
+        setActionType("generate");
         setIsAllocating(true);
         setAllocationSuccess(false);
         setAllocationProgress(15);
@@ -253,6 +292,9 @@ const Allocation = () => {
             setAllocationProgress(100);
             setAllocationSuccess(true);
             setIsGenerated(true);
+            if (isDemoUser) {
+                setCooldownRemaining(300);
+            }
             const reportMessage = response.data.reportName
                 ? ` Report saved as ${response.data.reportName}.`
                 : "";
@@ -270,6 +312,9 @@ const Allocation = () => {
             setIsAllocating(false);
             setAllocationSuccess(false);
             console.error("Generation Error:", err);
+            if (err.response?.status === 429 && err.response.data?.remainingSeconds) {
+                setCooldownRemaining(err.response.data.remainingSeconds);
+            }
             const errorMsg = err.response?.data?.message || "Failed to generate allocation.";
             alert(errorMsg);
         }
@@ -285,6 +330,7 @@ const Allocation = () => {
         }
 
         try {
+            setActionType("delete");
             await axios.delete(`${API_BASE_URL}/api/allocation/delete`, {
                 data: { date: examDate, session }
             });
@@ -506,6 +552,11 @@ const Allocation = () => {
                             </div>
                             
                             <div className="totals-actions">
+                                {isDemoUser && cooldownRemaining > 0 && (
+                                    <div className="demo-cooldown-badge">
+                                        <FaRegClock className="cooldown-icon" /> Demo Cooldown: {Math.floor(cooldownRemaining / 60)}:{String(cooldownRemaining % 60).padStart(2, '0')}
+                                    </div>
+                                )}
                                 <button type="button" className="action-btn-secondary" onClick={handleSaveSelection}>
                                     Save Selection
                                 </button>
@@ -515,10 +566,10 @@ const Allocation = () => {
                                             type="button"
                                             className="action-btn-primary regen" 
                                             onClick={handleGenerateAllocation}
-                                            disabled={totalStudents === 0 || totalStudents > totalCapacity}
-                                            title="Regenerate seating allocation for this slot"
+                                            disabled={totalStudents === 0 || totalStudents > totalCapacity || (isDemoUser && cooldownRemaining > 0)}
+                                            title={isDemoUser && cooldownRemaining > 0 ? `Demo cooldown active (${cooldownRemaining}s)` : "Regenerate seating allocation for this slot"}
                                         >
-                                            Regenerate Seating
+                                            {isDemoUser && cooldownRemaining > 0 ? `Cooldown (${cooldownRemaining}s)` : "Regenerate Seating"}
                                         </button>
                                         <button
                                             type="button"
@@ -534,9 +585,10 @@ const Allocation = () => {
                                         type="button"
                                         className="action-btn-primary" 
                                         onClick={handleGenerateAllocation}
-                                        disabled={totalStudents === 0 || totalStudents > totalCapacity}
+                                        disabled={totalStudents === 0 || totalStudents > totalCapacity || (isDemoUser && cooldownRemaining > 0)}
+                                        title={isDemoUser && cooldownRemaining > 0 ? `Demo cooldown active (${cooldownRemaining}s)` : "Generate seating allocation"}
                                     >
-                                        Generate Allocation
+                                        {isDemoUser && cooldownRemaining > 0 ? `Cooldown (${cooldownRemaining}s)` : "Generate Allocation"}
                                     </button>
                                 )}
                             </div>
@@ -548,22 +600,28 @@ const Allocation = () => {
             {/* Modern Glassmorphic Loading Modal */}
             {isAllocating && (
                 <div className="modern-loading-overlay">
-                    <div className={`modern-loading-card ${allocationSuccess ? "success-state" : ""}`}>
-                        <div className={`loader-glow-ring ${allocationSuccess ? "success-ring" : ""}`}>
+                    <div className={`modern-loading-card ${allocationSuccess ? (actionType === "delete" ? "deleted-state" : "success-state") : ""}`}>
+                        <div className={`loader-glow-ring ${allocationSuccess ? (actionType === "delete" ? "deleted-ring" : "success-ring") : ""}`}>
                             {allocationSuccess ? (
-                                <FaCheckCircle className="done-icon" />
+                                actionType === "delete" ? (
+                                    <FaTrash className="deleted-icon" />
+                                ) : (
+                                    <FaCheckCircle className="done-icon" />
+                                )
                             ) : (
                                 <FaSpinner className="spinning-icon" />
                             )}
                         </div>
-                        <h3 className="loading-card-title">
-                            {allocationSuccess ? "Done! Allocation Ready" : (isGenerated ? "Regenerating Seating" : "Generating Seating Allocation")}
+                        <h3 className={`loading-card-title ${allocationSuccess && actionType === "delete" ? "deleted-title" : ""}`}>
+                            {allocationSuccess 
+                                ? (actionType === "delete" ? "Deleted" : "Done! Allocation Ready") 
+                                : (isGenerated ? "Regenerating Seating" : "Generating Seating Allocation")}
                         </h3>
                         <p className="loading-card-phase">{allocationPhase}</p>
                         
                         <div className="modern-progress-track">
                             <div 
-                                className={`modern-progress-fill ${allocationSuccess ? "success-fill" : ""}`} 
+                                className={`modern-progress-fill ${allocationSuccess ? (actionType === "delete" ? "deleted-fill" : "success-fill") : ""}`} 
                                 style={{ width: `${allocationProgress}%` }}
                             >
                                 <div className="shimmer-effect"></div>
@@ -571,7 +629,7 @@ const Allocation = () => {
                         </div>
                         
                         <div className="loading-card-footer">
-                            <span>{allocationSuccess ? "Complete ✓" : `${allocationProgress}% Complete`}</span>
+                            <span>{allocationSuccess ? (actionType === "delete" ? "Deleted ✓" : "Complete ✓") : `${allocationProgress}% Complete`}</span>
                             <span>Slot: {examDate} ({session})</span>
                         </div>
                     </div>

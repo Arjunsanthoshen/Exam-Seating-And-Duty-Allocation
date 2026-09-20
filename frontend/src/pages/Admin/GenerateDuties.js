@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import AdminSidebar from "./AdminSidebar";
 import { API_BASE_URL } from "../../api/config";
-import { FaChevronLeft, FaChevronRight, FaTrash, FaSpinner, FaCheckCircle } from "react-icons/fa";
+import { FaChevronLeft, FaChevronRight, FaTrash, FaSpinner, FaCheckCircle, FaRegClock } from "react-icons/fa";
 import "./GenerateDuties.css";
 
 const GenerateDuties = () => {
@@ -15,10 +15,15 @@ const GenerateDuties = () => {
 
   // Modern Loading Modal States
   const [isProcessing, setIsProcessing] = useState(false);
+  const [actionType, setActionType] = useState("gen"); // "gen" | "regen" | "delete"
   const [processTitle, setProcessTitle] = useState("");
   const [processPhase, setProcessPhase] = useState("");
   const [processProgress, setProcessProgress] = useState(0);
   const [processSuccess, setProcessSuccess] = useState(false);
+
+  // Demo Cooldown State
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const isDemoUser = localStorage.getItem("isDemo") === "true" || (localStorage.getItem("username") || "").toLowerCase() === "demo";
 
   const getYYYYMMDD = (dateObj) => {
     const y = dateObj.getFullYear();
@@ -66,15 +71,44 @@ const GenerateDuties = () => {
   useEffect(() => { fetchAllExamDates(); }, [fetchAllExamDates]);
   useEffect(() => { if (examDate) fetchSummary(); }, [examDate, session, fetchSummary]);
 
+  // Demo Cooldown Sync
+  useEffect(() => {
+    if (!isDemoUser) return;
+    let isMounted = true;
+    const fetchCooldown = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await axios.get(`${API_BASE_URL}/api/admin/demo-cooldowns`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (isMounted && res.data && res.data.dutyRemaining > 0) {
+          setCooldownRemaining(res.data.dutyRemaining);
+        }
+      } catch (e) {}
+    };
+    fetchCooldown();
+    return () => { isMounted = false; };
+  }, [isDemoUser, examDate, session]);
+
+  // Demo Cooldown Ticker
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+    const interval = setInterval(() => {
+      setCooldownRemaining(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownRemaining]);
+
   const handleAction = async (type) => {
     if (type === 'delete') {
       if (!window.confirm("Delete this allocation? Faculty duty points will be restored.")) return;
       try {
+        setActionType('delete');
         await axios.delete(`${API_BASE_URL}/api/duties/delete`, { data: { date: examDate, session } });
         setIsProcessing(true);
         setProcessProgress(100);
         setProcessSuccess(true);
-        setProcessTitle("Duties Removed");
+        setProcessTitle("Deleted");
         setProcessPhase(`Duty allocation removed for ${examDate} (${session}). Faculty points restored.`);
         setTimeout(() => {
           setIsProcessing(false);
@@ -92,8 +126,14 @@ const GenerateDuties = () => {
       return;
     }
 
+    if (isDemoUser && cooldownRemaining > 0) {
+      alert(`Demo cooldown active. Please wait ${cooldownRemaining}s before generating duties again.`);
+      return;
+    }
+
     if (type === 'regen' && !window.confirm("Overwrite existing assignments with new teachers?")) return;
 
+    setActionType(type);
     setIsProcessing(true);
     setProcessSuccess(false);
     setProcessProgress(20);
@@ -122,6 +162,9 @@ const GenerateDuties = () => {
       setProcessProgress(100);
       setProcessSuccess(true);
       setProcessTitle("Done! Duties Allocated");
+      if (isDemoUser) {
+        setCooldownRemaining(300);
+      }
       const reportMessage = response.data?.reportName
         ? ` Report saved as ${response.data.reportName}.`
         : "";
@@ -138,6 +181,9 @@ const GenerateDuties = () => {
       clearTimeout(t2);
       setIsProcessing(false);
       setProcessSuccess(false);
+      if (err.response?.status === 429 && err.response.data?.remainingSeconds) {
+        setCooldownRemaining(err.response.data.remainingSeconds);
+      }
       alert(err.response?.data?.message || "Action failed"); 
     }
   };
@@ -215,19 +261,31 @@ const GenerateDuties = () => {
               )}
 
               <div className="action-btn-row">
+                {isDemoUser && cooldownRemaining > 0 && (
+                  <div className="demo-cooldown-badge">
+                    <FaRegClock className="cooldown-icon" /> Demo Cooldown: {Math.floor(cooldownRemaining / 60)}:{String(cooldownRemaining % 60).padStart(2, '0')}
+                  </div>
+                )}
                 {!summary.isGenerated ? (
                   <button 
                     type="button"
                     className={`gen-btn-sm ${!summary.hasAllocation ? 'btn-unallocated' : ''}`} 
                     onClick={() => handleAction('gen')} 
-                    title={!summary.hasAllocation ? "Seat not allocated for this date/session" : "Allocate faculty duties"}
+                    disabled={isDemoUser && cooldownRemaining > 0}
+                    title={!summary.hasAllocation ? "Seat not allocated for this date/session" : (isDemoUser && cooldownRemaining > 0 ? `Demo cooldown active (${cooldownRemaining}s)` : "Allocate faculty duties")}
                   >
-                    {!summary.hasAllocation ? "Seat Not Allocated" : "Allocate Duties"}
+                    {!summary.hasAllocation ? "Seat Not Allocated" : (isDemoUser && cooldownRemaining > 0 ? `Cooldown (${cooldownRemaining}s)` : "Allocate Duties")}
                   </button>
                 ) : (
                   <>
-                    <button type="button" className="regen-btn-sm" onClick={() => handleAction('regen')}>
-                      Regenerate Duties
+                    <button 
+                      type="button" 
+                      className="regen-btn-sm" 
+                      onClick={() => handleAction('regen')}
+                      disabled={isDemoUser && cooldownRemaining > 0}
+                      title={isDemoUser && cooldownRemaining > 0 ? `Demo cooldown active (${cooldownRemaining}s)` : "Regenerate Duties"}
+                    >
+                      {isDemoUser && cooldownRemaining > 0 ? `Cooldown (${cooldownRemaining}s)` : "Regenerate Duties"}
                     </button>
                     <button type="button" className="delete-icon-btn action-delete-duty" title="Delete Allocation" onClick={() => handleAction('delete')}>
                       <FaTrash />
@@ -270,20 +328,26 @@ const GenerateDuties = () => {
       {/* Modern Glassmorphic Loading Modal */}
       {isProcessing && (
         <div className="modern-loading-overlay">
-          <div className={`modern-loading-card ${processSuccess ? "success-state" : ""}`}>
-            <div className={`loader-glow-ring ${processSuccess ? "success-ring" : ""}`}>
+          <div className={`modern-loading-card ${processSuccess ? (actionType === 'delete' ? 'deleted-state' : 'success-state') : ''}`}>
+            <div className={`loader-glow-ring ${processSuccess ? (actionType === 'delete' ? 'deleted-ring' : 'success-ring') : ''}`}>
               {processSuccess ? (
-                <FaCheckCircle className="done-icon" />
+                actionType === 'delete' ? (
+                  <FaTrash className="deleted-icon" />
+                ) : (
+                  <FaCheckCircle className="done-icon" />
+                )
               ) : (
                 <FaSpinner className="spinning-icon" />
               )}
             </div>
-            <h3 className="loading-card-title">{processTitle}</h3>
+            <h3 className={`loading-card-title ${processSuccess && actionType === 'delete' ? 'deleted-title' : ''}`}>
+              {processSuccess && actionType === 'delete' ? 'Deleted' : processTitle}
+            </h3>
             <p className="loading-card-phase">{processPhase}</p>
             
             <div className="modern-progress-track">
               <div 
-                className={`modern-progress-fill ${processSuccess ? "success-fill" : ""}`} 
+                className={`modern-progress-fill ${processSuccess ? (actionType === 'delete' ? 'deleted-fill' : 'success-fill') : ''}`} 
                 style={{ width: `${processProgress}%` }}
               >
                 <div className="shimmer-effect"></div>
@@ -291,7 +355,7 @@ const GenerateDuties = () => {
             </div>
             
             <div className="loading-card-footer">
-              <span>{processSuccess ? "Complete ✓" : `${processProgress}% Complete`}</span>
+              <span>{processSuccess ? (actionType === 'delete' ? 'Deleted ✓' : 'Complete ✓') : `${processProgress}% Complete`}</span>
               <span>Slot: {examDate} ({session})</span>
             </div>
           </div>

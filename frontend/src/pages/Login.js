@@ -42,6 +42,7 @@ function Login() {
           localStorage.setItem("token", issuedToken);
           localStorage.setItem("role", data.role || role.trim());
           localStorage.setItem("username", username.trim());
+          localStorage.setItem("isDemo", data.isDemo ? "true" : "false");
         }
 
         const userRole = String(data.role || role).toLowerCase();
@@ -111,13 +112,7 @@ function Login() {
             <input
               type="text"
               className="form-control"
-              placeholder={
-                role === "Admin"
-                  ? "admin@sjcetpalai.ac.in"
-                  : role === "Teacher"
-                  ? "teacher@sjcetpalai.ac.in"
-                  : "student@sjcetpalai.ac.in"
-              }
+              placeholder="demo"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required

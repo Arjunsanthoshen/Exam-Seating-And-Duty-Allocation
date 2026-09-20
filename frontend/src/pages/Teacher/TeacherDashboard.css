@@ -692,6 +692,72 @@
   border: 1px solid rgba(16, 185, 129, 0.28);
 }
 
+.teacher-status-pill.pending {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.teacher-status-pill.accepted {
+  background: rgba(16, 185, 129, 0.14);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.teacher-status-pill.declined {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.teacher-sl-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.teacher-reason-cell {
+  text-align: left !important;
+  line-height: 1.45;
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  padding: 14px 18px !important;
+}
+
+.teacher-reason-text {
+  word-break: break-word;
+}
+
+.teacher-read-more-btn {
+  background: none;
+  border: none;
+  color: #818cf8;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-left: 6px;
+  padding: 0;
+  text-decoration: underline;
+  transition: color 0.15s ease;
+  display: inline;
+}
+
+.teacher-read-more-btn:hover {
+  color: #a5b4fc;
+}
+
+.teacher-exemptions-card {
+  margin-top: 28px;
+}
+
 .th-center {
   text-align: center !important;
 }

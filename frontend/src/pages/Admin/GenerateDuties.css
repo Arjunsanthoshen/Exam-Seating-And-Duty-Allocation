@@ -524,3 +524,49 @@
   align-items: center !important;
   margin: 0 auto;
 }
+
+/* Deleted State & Cooldown Badge Styles */
+.modern-loading-card.deleted-state {
+  border-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(239, 68, 68, 0.25);
+}
+
+.loader-glow-ring.deleted-ring {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 28px rgba(239, 68, 68, 0.5);
+}
+
+.deleted-icon {
+  font-size: 2rem;
+  color: #ef4444;
+  animation: scaleInCheck 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.deleted-title {
+  color: #f87171 !important;
+}
+
+.modern-progress-fill.deleted-fill {
+  background: linear-gradient(90deg, #ef4444, #f87171) !important;
+}
+
+.demo-cooldown-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  animation: fadeInModal 0.3s ease;
+}
+
+.cooldown-icon {
+  font-size: 0.95rem;
+}
