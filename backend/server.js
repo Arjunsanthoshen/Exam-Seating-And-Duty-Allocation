@@ -1939,12 +1939,14 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         let hallWisePdfBuffer;
         let totalSeatingPdfBuffer;
         try {
+            const resolvedExamDate = await resolveHallSeatingExamDate(connection, formattedDate);
+
             const tHallWiseStart = Date.now();
-            hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser);
+            hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser, resolvedExamDate);
             console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Hall-wise PDF stage completed in ${Date.now() - tHallWiseStart} ms`);
 
             const tTotalStart = Date.now();
-            totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser);
+            totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser, resolvedExamDate);
             console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Total Seating PDF stage completed in ${Date.now() - tTotalStart} ms`);
         } finally {
             const tSharedCloseStart = Date.now();
@@ -2817,14 +2819,14 @@ async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBr
         await page.setJavaScriptEnabled(false);
 
         // Stage: any waitForNavigation or retry
-        console.log(`${prefix} [any waitForNavigation or retry] None configured (page.setContent uses internal LifecycleWatcher with waitUntil: "networkidle0", no separate waitForNavigation or retry)`);
+        console.log(`${prefix} [any waitForNavigation or retry] None configured (page.setContent uses internal LifecycleWatcher with waitUntil: "load", no separate waitForNavigation or retry)`);
 
         // Stage: page.setContent() / navigation
         const tSetContentStart = Date.now();
-        console.log(`${prefix} [page.setContent() / navigation] Starting page.setContent() (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes, waitUntil: "networkidle0", timeout: 30000ms)...`);
+        console.log(`${prefix} [page.setContent() / navigation] Starting page.setContent() (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes, waitUntil: "load", timeout: 30000ms)...`);
         console.time(`${prefix} page.setContent()`);
         try {
-            await page.setContent(html, { waitUntil: "networkidle0" });
+            await page.setContent(html, { waitUntil: "load" });
             const setContentElapsed = Date.now() - tSetContentStart;
             console.timeEnd(`${prefix} page.setContent()`);
             console.log(`${prefix} [page.setContent() / navigation] completed in ${setContentElapsed} ms`);
@@ -2882,7 +2884,7 @@ async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBr
     }
 }
 
-async function generateHallSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null) {
+async function generateHallSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null, cachedExamDate = null) {
     const tTotalStart = Date.now();
     console.log(`[SEATING PDF TIMING] [Hall-wise] [total generation time] Starting Hall-wise seating PDF generation for examId=${examId}, examDate=${examDate}...`);
 
@@ -2895,7 +2897,7 @@ async function generateHallSeatingPdfByExamId(connection, examId, examDate, exis
         throw new Error("No seating found");
     }
 
-    const resolvedExamDate = await resolveHallSeatingExamDate(connection, examDate);
+    const resolvedExamDate = cachedExamDate || await resolveHallSeatingExamDate(connection, examDate);
     const dbElapsed = Date.now() - tDbStart;
     console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] completed in ${dbElapsed} ms (${rows.length} seating rows fetched)`);
 
@@ -3132,7 +3134,7 @@ function buildTotalSeatingHtml(rows, examDate) {
     return html;
 }
 
-async function generateTotalSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null) {
+async function generateTotalSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null, cachedExamDate = null) {
     const tTotalStart = Date.now();
     console.log(`[SEATING PDF TIMING] [Total Seating] [total generation time] Starting Total Seating PDF generation for examId=${examId}, examDate=${examDate}...`);
 
@@ -3145,7 +3147,7 @@ async function generateTotalSeatingPdfByExamId(connection, examId, examDate, exi
         throw new Error("No seating found");
     }
 
-    const resolvedExamDate = await resolveHallSeatingExamDate(connection, examDate);
+    const resolvedExamDate = cachedExamDate || await resolveHallSeatingExamDate(connection, examDate);
     const dbElapsed = Date.now() - tDbStart;
     console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] completed in ${dbElapsed} ms (${rows.length} total seating rows fetched)`);
 
@@ -3273,7 +3275,7 @@ function buildInvigilationDutyHtml(rows, examDate, selectedYearsLabel) {
     return html;
 }
 
-async function generateInvigilationDutyPdfByExamDate(connection, examDate) {
+async function generateInvigilationDutyPdfByExamDate(connection, examDate, existingBrowser = null) {
     const tDutyStart = Date.now();
     console.log(`[DUTY PDF TIMING] [total generation time] Starting Invigilation Duty PDF generation for examDate=${examDate}...`);
 
@@ -3302,7 +3304,7 @@ async function generateInvigilationDutyPdfByExamDate(connection, examDate) {
     const pdfBuffer = await renderPdfFromHtml(html, "Invigilation Duty", {
         seatCount: rows.length,
         expectedPages: 1
-    });
+    }, existingBrowser);
 
     const totalGenElapsed = Date.now() - tDutyStart;
     console.log(`[DUTY PDF TIMING] [total generation time] completed in ${totalGenElapsed} ms`);
