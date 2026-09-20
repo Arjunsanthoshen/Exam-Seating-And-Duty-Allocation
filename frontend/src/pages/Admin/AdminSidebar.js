@@ -73,6 +73,7 @@ const AdminSidebar = () => {
 
   // Cleanup Modal States (Real Admin Only)
   const [showCleanupModal, setShowCleanupModal] = useState(false);
+  const [confirmCode, setConfirmCode] = useState("");
   const [cleanupError, setCleanupError] = useState("");
   const [isPurging, setIsPurging] = useState(false);
   const [cleanupSuccessMsg, setCleanupSuccessMsg] = useState("");
@@ -80,6 +81,7 @@ const AdminSidebar = () => {
   const handleOpenCleanup = () => {
     if (isDemoUser) return;
     setShowCleanupModal(true);
+    setConfirmCode("");
     setCleanupError("");
     setCleanupSuccessMsg("");
     setIsPurging(false);
@@ -87,12 +89,18 @@ const AdminSidebar = () => {
 
   const handleCloseCleanup = () => {
     setShowCleanupModal(false);
+    setConfirmCode("");
     setCleanupError("");
     setCleanupSuccessMsg("");
     setIsPurging(false);
   };
 
-  const handleExecutePurge = async () => {
+  const handleExecutePurge = async (e) => {
+    if (e) e.preventDefault();
+    if (confirmCode !== "+") {
+      setCleanupError("Please enter '+' to authorize demo data deletion.");
+      return;
+    }
     setIsPurging(true);
     setCleanupError("");
     try {
@@ -210,7 +218,7 @@ const AdminSidebar = () => {
                 <span>{cleanupSuccessMsg}</span>
               </div>
             ) : (
-              <div className="admin-cleanup-step-body">
+              <form onSubmit={handleExecutePurge} className="admin-cleanup-step-body">
                 <div className="admin-cleanup-warning-box">
                   <strong>Permanent Action Warning</strong>
                   <p>
@@ -222,6 +230,26 @@ const AdminSidebar = () => {
                     <li>Demo teacher requests and demo exam slots will be deleted.</li>
                     <li>Real examination records and permanent demo accounts will remain safe.</li>
                   </ul>
+                </div>
+
+                <p className="admin-cleanup-instruction" style={{ textAlign: "center", marginBottom: "10px" }}>
+                  Enter <strong>+</strong> in the box below to authorize deletion:
+                </p>
+
+                <div className="admin-cleanup-input-wrap">
+                  <input
+                    type="text"
+                    className="admin-cleanup-input"
+                    maxLength={1}
+                    value={confirmCode}
+                    onChange={(e) => {
+                      setConfirmCode(e.target.value);
+                      setCleanupError("");
+                    }}
+                    placeholder="+"
+                    autoFocus
+                    required
+                  />
                 </div>
 
                 {cleanupError && (
@@ -240,15 +268,14 @@ const AdminSidebar = () => {
                     Cancel
                   </button>
                   <button 
-                    type="button" 
+                    type="submit" 
                     className="admin-cleanup-btn-danger" 
-                    onClick={handleExecutePurge}
-                    disabled={isPurging}
+                    disabled={isPurging || confirmCode !== "+"}
                   >
                     {isPurging ? "Purging Demo Data..." : "OK"}
                   </button>
                 </div>
-              </div>
+              </form>
             )}
           </div>
         </div>,
