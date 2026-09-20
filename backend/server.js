@@ -15,6 +15,7 @@ const IN_PROJECT_PUPPETEER_CACHE_DIR = path.resolve(__dirname, ".cache", "puppet
 if (!process.env.PUPPETEER_CACHE_DIR) {
     process.env.PUPPETEER_CACHE_DIR = IN_PROJECT_PUPPETEER_CACHE_DIR;
 }
+const puppeteer = require("puppeteer");
 
 // Load environment variables (.env in backend or project root)
 try {
@@ -373,23 +374,36 @@ function requireRole(...allowedRoles) {
 }
 
 const hasColumnCache = new Map();
+const hasColumnPromiseCache = new Map();
+
 async function tableHasColumn(tableName, columnName) {
+    if (!tableName || !columnName) return false;
     const key = `${tableName}.${columnName}`.toLowerCase();
     if (hasColumnCache.has(key)) return hasColumnCache.get(key);
-    try {
-        const [rows] = await db.promise().query(`
-            SELECT 1 FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND LOWER(TABLE_NAME) = ?
-              AND LOWER(COLUMN_NAME) = ?
-            LIMIT 1
-        `, [tableName.toLowerCase(), columnName.toLowerCase()]);
-        const exists = rows.length > 0;
-        hasColumnCache.set(key, exists);
-        return exists;
-    } catch (e) {
-        return false;
-    }
+    if (hasColumnPromiseCache.has(key)) return hasColumnPromiseCache.get(key);
+
+    const queryPromise = (async () => {
+        try {
+            const [rows] = await db.promise().query(`
+                SELECT 1 FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND LOWER(TABLE_NAME) = ?
+                  AND LOWER(COLUMN_NAME) = ?
+                LIMIT 1
+            `, [tableName.toLowerCase(), columnName.toLowerCase()]);
+            const exists = rows.length > 0;
+            hasColumnCache.set(key, exists);
+            return exists;
+        } catch (e) {
+            console.warn(`[tableHasColumn] Error checking column ${key}: ${e.message}`);
+            return false;
+        } finally {
+            hasColumnPromiseCache.delete(key);
+        }
+    })();
+
+    hasColumnPromiseCache.set(key, queryPromise);
+    return queryPromise;
 }
 
 async function ensureRequestTables() {
@@ -1919,40 +1933,43 @@ app.post('/api/allocation/generate', requireAuth, requireRole('admin'), async (r
         const tAllPdfStart = Date.now();
         console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Starting Seating PDF generation pipeline with shared Puppeteer browser...`);
 
-        const tSharedLaunchStart = Date.now();
-        const executablePath = resolveChromeExecutable();
-        if (!executablePath) {
-            throw new Error("Chrome executable not found. PDF generation is unavailable.");
-        }
-        const sharedBrowser = await puppeteer.launch({
-            headless: "new",
-            executablePath,
-            args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu"
-            ]
-        });
-        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] [Puppeteer browser launch] Shared browser launched in ${Date.now() - tSharedLaunchStart} ms`);
+        const roomMap = new Map();
+        rooms.forEach(r => roomMap.set(`${r.block}_${r.room_no}`, r));
 
-        let hallWisePdfBuffer;
-        let totalSeatingPdfBuffer;
-        try {
-            const resolvedExamDate = await resolveHallSeatingExamDate(connection, formattedDate);
+        const inMemoryRows = seatingValues
+            .filter(row => row[0] === exam_id)
+            .map(row => {
+                const r = roomMap.get(`${row[2]}_${row[1]}`) || {};
+                return {
+                    room_no: row[1],
+                    block: row[2],
+                    column_no: row[3],
+                    bench_no: row[4],
+                    seat_position: row[5],
+                    username: row[6],
+                    batch: row[7],
+                    roll_no: row[8],
+                    branch: row[9],
+                    cap_per_bench: r.cap_per_bench,
+                    col1: r.col1,
+                    col2: r.col2,
+                    col3: r.col3,
+                    col4: r.col4,
+                    col5: r.col5
+                };
+            });
 
-            const tHallWiseStart = Date.now();
-            hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser, resolvedExamDate);
-            console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Hall-wise PDF stage completed in ${Date.now() - tHallWiseStart} ms`);
+        const sharedBrowser = await getSharedBrowser();
 
-            const tTotalStart = Date.now();
-            totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser, resolvedExamDate);
-            console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Total Seating PDF stage completed in ${Date.now() - tTotalStart} ms`);
-        } finally {
-            const tSharedCloseStart = Date.now();
-            await sharedBrowser.close();
-            console.log(`[SEATING PDF TIMING] [Combined Seating Flow] [browser close] Shared browser closed in ${Date.now() - tSharedCloseStart} ms`);
-        }
+        const resolvedExamDate = await resolveHallSeatingExamDate(connection, formattedDate);
+
+        const tHallWiseStart = Date.now();
+        const hallWisePdfBuffer = await generateHallSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser, resolvedExamDate, inMemoryRows);
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Hall-wise PDF stage completed in ${Date.now() - tHallWiseStart} ms`);
+
+        const tTotalStart = Date.now();
+        const totalSeatingPdfBuffer = await generateTotalSeatingPdfByExamId(connection, exam_id, formattedDate, sharedBrowser, resolvedExamDate, inMemoryRows);
+        console.log(`[SEATING PDF TIMING] [Combined Seating Flow] Total Seating PDF stage completed in ${Date.now() - tTotalStart} ms`);
 
         console.log(`[SEATING PDF TIMING] [Combined Seating Flow] [total generation time] Both Seating PDFs generated with shared browser in ${Date.now() - tAllPdfStart} ms`);
 
@@ -2214,7 +2231,6 @@ app.delete('/api/allocation/delete', requireAuth, requireRole('admin'), async (r
 // ----------------------------------------------------------------------------
 //                        REPORT ROUTES
 // ----------------------------------------------------------------------------
-const puppeteer = require("puppeteer");
 
 async function buildHallSeatingRows(connection, examId) {
     const query = `
@@ -2751,19 +2767,19 @@ function resolveChromeExecutable() {
     return null;
 }
 
-async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBrowser = null) {
-    const isSeatingReport = reportName === "Hall-wise" || reportName === "Total Seating";
-    const prefix = isSeatingReport ? `[SEATING PDF TIMING] [${reportName}]` : (reportName === "Invigilation Duty" ? `[DUTY PDF TIMING] [${reportName}]` : `[PDF TIMING] [${reportName}]`);
-    const tRenderStart = Date.now();
-    const htmlSizeBytes = Buffer.byteLength(html, "utf8");
+let persistentSharedBrowser = null;
+let persistentBrowserPromise = null;
 
-    console.log(`${prefix} Starting renderPdfFromHtml (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes${meta.seatCount ? `, number of students/seats rendered: ${meta.seatCount}` : ""}${meta.expectedPages ? `, number of pages expected: ${meta.expectedPages}` : ""})`);
-    console.time(`${prefix} Puppeteer total renderPdfFromHtml`);
+async function getSharedBrowser() {
+    if (persistentSharedBrowser && persistentSharedBrowser.isConnected()) {
+        return persistentSharedBrowser;
+    }
 
-    let browser = existingBrowser;
-    const shouldCloseBrowser = !existingBrowser;
+    if (persistentBrowserPromise) {
+        return persistentBrowserPromise;
+    }
 
-    if (!browser) {
+    persistentBrowserPromise = (async () => {
         const executablePath = resolveChromeExecutable();
 
         if (!executablePath) {
@@ -2783,9 +2799,9 @@ async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBr
             );
         }
 
-        console.log(`[PDF] Launching Chrome: ${executablePath}`);
-
-        const launchOptions = {
+        console.log(`[PDF] Launching shared persistent Chrome instance: ${executablePath}`);
+        const tLaunchStart = Date.now();
+        const browser = await puppeteer.launch({
             headless: "new",
             executablePath,
             args: [
@@ -2794,20 +2810,57 @@ async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBr
                 "--disable-dev-shm-usage",
                 "--disable-gpu"
             ]
-        };
+        });
+        const launchElapsed = Date.now() - tLaunchStart;
+        console.log(`[PDF] Shared persistent Chrome launched successfully in ${launchElapsed} ms`);
 
-        const tLaunchStart = Date.now();
-        console.log(`${prefix} [Puppeteer browser launch] Starting browser launch...`);
-        console.time(`${prefix} Puppeteer browser launch`);
+        browser.on("disconnected", () => {
+            console.warn("[PDF] Shared Chrome instance disconnected/closed. Will recreate on next request.");
+            if (persistentSharedBrowser === browser) {
+                persistentSharedBrowser = null;
+            }
+        });
+
+        persistentSharedBrowser = browser;
+        return browser;
+    })().finally(() => {
+        persistentBrowserPromise = null;
+    });
+
+    return persistentBrowserPromise;
+}
+
+function closePersistentBrowser() {
+    if (persistentSharedBrowser) {
         try {
-            browser = await puppeteer.launch(launchOptions);
-            const launchElapsed = Date.now() - tLaunchStart;
-            console.timeEnd(`${prefix} Puppeteer browser launch`);
-            console.log(`${prefix} [Puppeteer browser launch] completed in ${launchElapsed} ms`);
-        } catch (launchErr) {
-            const launchElapsed = Date.now() - tLaunchStart;
-            console.error(`${prefix} [Puppeteer browser launch] FAILED after ${launchElapsed} ms with error: ${launchErr.message}`);
-            throw launchErr;
+            persistentSharedBrowser.close().catch(() => {});
+        } catch (e) {}
+        persistentSharedBrowser = null;
+    }
+}
+process.on("SIGTERM", closePersistentBrowser);
+process.on("SIGINT", closePersistentBrowser);
+
+async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBrowser = null) {
+    const isSeatingReport = reportName === "Hall-wise" || reportName === "Total Seating";
+    const prefix = isSeatingReport ? `[SEATING PDF TIMING] [${reportName}]` : (reportName === "Invigilation Duty" ? `[DUTY PDF TIMING] [${reportName}]` : `[PDF TIMING] [${reportName}]`);
+    const tRenderStart = Date.now();
+    const htmlSizeBytes = Buffer.byteLength(html, "utf8");
+
+    console.log(`${prefix} Starting renderPdfFromHtml (generated HTML size: ${html.length} chars, ${htmlSizeBytes} bytes${meta.seatCount ? `, number of students/seats rendered: ${meta.seatCount}` : ""}${meta.expectedPages ? `, number of pages expected: ${meta.expectedPages}` : ""})`);
+    console.time(`${prefix} Puppeteer total renderPdfFromHtml`);
+
+    let browser = existingBrowser;
+
+    if (!browser) {
+        const isWarm = Boolean(persistentSharedBrowser && persistentSharedBrowser.isConnected());
+        const tLaunchStart = Date.now();
+        browser = await getSharedBrowser();
+        const launchElapsed = Date.now() - tLaunchStart;
+        if (isWarm) {
+            console.log(`${prefix} [Puppeteer browser launch] Reusing warm shared persistent browser instance (${launchElapsed} ms)`);
+        } else {
+            console.log(`${prefix} [Puppeteer browser launch] Launched shared persistent browser instance in ${launchElapsed} ms`);
         }
     } else {
         console.log(`${prefix} [Puppeteer browser launch] Reusing existing shared browser instance (0 ms)`);
@@ -2863,43 +2916,34 @@ async function renderPdfFromHtml(html, reportName = "PDF", meta = {}, existingBr
         if (page) {
             try { await page.close(); } catch (e) {}
         }
-        if (shouldCloseBrowser && browser) {
-            const tCloseStart = Date.now();
-            console.log(`${prefix} [browser close] Closing browser...`);
-            console.time(`${prefix} browser close`);
-            try {
-                await browser.close();
-                const closeElapsed = Date.now() - tCloseStart;
-                console.timeEnd(`${prefix} browser close`);
-                console.log(`${prefix} [browser close] completed in ${closeElapsed} ms`);
-            } catch (closeErr) {
-                const closeElapsed = Date.now() - tCloseStart;
-                console.error(`${prefix} [browser close] Browser close failed after ${closeElapsed} ms: ${closeErr.message}`);
-            }
-        } else {
-            console.log(`${prefix} [browser close] Page closed; shared browser retained for subsequent tasks`);
-        }
+        console.log(`${prefix} [browser close] Page closed; shared browser retained for subsequent tasks`);
         try { console.timeEnd(`${prefix} Puppeteer total renderPdfFromHtml`); } catch (e) {}
         console.log(`${prefix} Total renderPdfFromHtml duration: ${Date.now() - tRenderStart} ms`);
     }
 }
 
-async function generateHallSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null, cachedExamDate = null) {
+async function generateHallSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null, cachedExamDate = null, prefetchedRows = null) {
     const tTotalStart = Date.now();
     console.log(`[SEATING PDF TIMING] [Hall-wise] [total generation time] Starting Hall-wise seating PDF generation for examId=${examId}, examDate=${examDate}...`);
 
-    const tDbStart = Date.now();
-    console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] Fetching seating rows from DB for exam ${examId}...`);
-    const rows = await buildHallSeatingRows(connection, examId);
+    let rows;
+    if (prefetchedRows && prefetchedRows.length > 0) {
+        console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] Reusing ${prefetchedRows.length} in-memory seating rows (0 ms, duplicate DB query eliminated)`);
+        rows = prefetchedRows;
+    } else {
+        const tDbStart = Date.now();
+        console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] Fetching seating rows from DB for exam ${examId}...`);
+        rows = await buildHallSeatingRows(connection, examId);
+        const dbElapsed = Date.now() - tDbStart;
+        console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] completed in ${dbElapsed} ms (${rows.length} seating rows fetched)`);
+    }
 
     if (!rows.length) {
-        console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] No seating found (took ${Date.now() - tDbStart} ms)`);
+        console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] No seating found`);
         throw new Error("No seating found");
     }
 
     const resolvedExamDate = cachedExamDate || await resolveHallSeatingExamDate(connection, examDate);
-    const dbElapsed = Date.now() - tDbStart;
-    console.log(`[SEATING PDF TIMING] [Hall-wise] [database queries] completed in ${dbElapsed} ms (${rows.length} seating rows fetched)`);
 
     const distinctRooms = new Set(rows.map(r => `${r.block}-${r.room_no}`));
     const expectedPages = distinctRooms.size;
@@ -3134,22 +3178,28 @@ function buildTotalSeatingHtml(rows, examDate) {
     return html;
 }
 
-async function generateTotalSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null, cachedExamDate = null) {
+async function generateTotalSeatingPdfByExamId(connection, examId, examDate, existingBrowser = null, cachedExamDate = null, prefetchedRows = null) {
     const tTotalStart = Date.now();
     console.log(`[SEATING PDF TIMING] [Total Seating] [total generation time] Starting Total Seating PDF generation for examId=${examId}, examDate=${examDate}...`);
 
-    const tDbStart = Date.now();
-    console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] Fetching total seating rows from DB for exam ${examId}...`);
-    const rows = await buildTotalSeatingRows(connection, examId);
+    let rows;
+    if (prefetchedRows && prefetchedRows.length > 0) {
+        console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] Reusing ${prefetchedRows.length} in-memory seating rows (0 ms, duplicate DB query eliminated)`);
+        rows = prefetchedRows;
+    } else {
+        const tDbStart = Date.now();
+        console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] Fetching total seating rows from DB for exam ${examId}...`);
+        rows = await buildTotalSeatingRows(connection, examId);
+        const dbElapsed = Date.now() - tDbStart;
+        console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] completed in ${dbElapsed} ms (${rows.length} total seating rows fetched)`);
+    }
 
     if (!rows.length) {
-        console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] No seating found (took ${Date.now() - tDbStart} ms)`);
+        console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] No seating found`);
         throw new Error("No seating found");
     }
 
     const resolvedExamDate = cachedExamDate || await resolveHallSeatingExamDate(connection, examDate);
-    const dbElapsed = Date.now() - tDbStart;
-    console.log(`[SEATING PDF TIMING] [Total Seating] [database queries] completed in ${dbElapsed} ms (${rows.length} total seating rows fetched)`);
 
     console.log(`[SEATING PDF TIMING] [Total Seating] [metadata] number of students/seats rendered: ${rows.length}, number of pages expected: 1-2`);
 
@@ -4563,6 +4613,11 @@ if (require.main === module) {
         console.log(` Server running on http://0.0.0.0:${PORT} `);
         console.log(` Health check at http://0.0.0.0:${PORT}/api/health `);
         console.log("-------------------------------------------");
+
+        // Pre-warm the shared persistent Puppeteer browser in the background (non-blocking)
+        getSharedBrowser().catch(err => {
+            console.warn(`[PDF] Background browser pre-warm notice: ${err.message}`);
+        });
     });
 }
 

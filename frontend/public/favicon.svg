@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="45%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+    <linearGradient id="capGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F1F5F9" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047" />
+      <stop offset="100%" stop-color="#F59E0B" />
+    </linearGradient>
+    <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#090d16" flood-opacity="0.32" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base with Royal Indigo/Blue Gradient -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Inner Soft Glow Border -->
+  <rect x="28" y="28" width="456" height="456" rx="108" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="7" />
+
+  <!-- Main Academic Icon Group -->
+  <g filter="url(#dropShadow)">
+    <!-- Mortarboard Cap Diamond Top -->
+    <polygon points="256,118 424,192 256,266 88,192" fill="url(#capGrad)" />
+
+    <!-- Skull Cap Body (Underneath Mortarboard) -->
+    <path d="M152 220 L152 290 C152 338 360 338 360 290 L360 220 L256 266 Z" fill="#CBD5E1" opacity="0.95" />
+
+    <!-- Tassel Center Pivot Button -->
+    <circle cx="256" cy="192" r="11" fill="url(#goldGrad)" />
+
+    <!-- Tassel Hanging Cord and Fringe -->
+    <path d="M256 192 Q365 210 380 262 L384 336" fill="none" stroke="url(#goldGrad)" stroke-width="7" stroke-linecap="round" />
+    <circle cx="384" cy="342" r="10" fill="url(#goldGrad)" />
+
+    <!-- Exam Hall Seating / Verified Badge at Bottom -->
+    <g transform="translate(186, 318)">
+      <!-- Outer Card Shield -->
+      <rect x="0" y="0" width="140" height="84" rx="22" fill="#FFFFFF" />
+      <rect x="5" y="5" width="130" height="74" rx="17" fill="#EEF2FF" />
+      <!-- Seating Rows / Invigilation Checkmark Icon -->
+      <path d="M34 42 L56 62 L106 24" fill="none" stroke="#4F46E5" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+  </g>
+</svg>
