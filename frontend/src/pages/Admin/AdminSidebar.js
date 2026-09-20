@@ -97,8 +97,8 @@ const AdminSidebar = () => {
 
   const handleExecutePurge = async (e) => {
     if (e) e.preventDefault();
-    if (confirmCode !== "+") {
-      setCleanupError("Please enter '+' to authorize demo data deletion.");
+    if (confirmCode.trim() !== "+") {
+      setCleanupError("Invalid confirmation code.");
       return;
     }
     setIsPurging(true);
@@ -107,7 +107,7 @@ const AdminSidebar = () => {
       const token = localStorage.getItem("token");
       const res = await axios.post(
         `${API_BASE_URL}/api/admin/demo-cleanup`,
-        { confirmationCode: "+" },
+        { confirmationCode: confirmCode.trim() },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setCleanupSuccessMsg(res.data.message || "All demo-created data purged successfully.");
@@ -233,20 +233,18 @@ const AdminSidebar = () => {
                 </div>
 
                 <p className="admin-cleanup-instruction" style={{ textAlign: "center", marginBottom: "10px" }}>
-                  Enter <strong>+</strong> in the box below to authorize deletion:
+                  Enter authorization code in the box below to authorize deletion:
                 </p>
 
                 <div className="admin-cleanup-input-wrap">
                   <input
                     type="text"
                     className="admin-cleanup-input"
-                    maxLength={1}
                     value={confirmCode}
                     onChange={(e) => {
                       setConfirmCode(e.target.value);
                       setCleanupError("");
                     }}
-                    placeholder="+"
                     autoFocus
                     required
                   />
@@ -270,7 +268,7 @@ const AdminSidebar = () => {
                   <button 
                     type="submit" 
                     className="admin-cleanup-btn-danger" 
-                    disabled={isPurging || confirmCode !== "+"}
+                    disabled={isPurging || !confirmCode.trim()}
                   >
                     {isPurging ? "Purging Demo Data..." : "OK"}
                   </button>
